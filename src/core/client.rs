@@ -1,11 +1,11 @@
 //! EClient and supporting structs.  Responsible for connecting to Trader Workstation or IB Gatway and sending requests
 use std::io::Write;
-use std::marker::Sync;
+//use std::marker::Sync;
 use std::net::Shutdown;
 use std::net::TcpStream;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::{fmt::Debug, thread};
 
@@ -16,19 +16,19 @@ use num_derive::FromPrimitive;
 
 use super::streamer::{Streamer, TcpStreamer};
 use crate::core::common::*;
+//use crate::core::wrapper::Wrapper;
 use crate::core::contract::Contract;
 use crate::core::decoder::Decoder;
 use crate::core::errors::{IBKRApiLibError, TwsApiReportableError, TwsError};
 use crate::core::execution::ExecutionFilter;
 use crate::core::messages::make_field;
 use crate::core::messages::{make_field_handle_empty, read_msg};
-use crate::core::messages::{make_message, read_fields, OutgoingMessageIds};
+use crate::core::messages::{make_message, read_fields, OutgoingMessageIds,IncomingMsgCmd};
 use crate::core::order::Order;
 use crate::core::order_condition::Condition;
 use crate::core::reader::Reader;
 use crate::core::scanner::ScannerSubscription;
 use crate::core::server_versions::*;
-use crate::core::wrapper::Wrapper;
 
 pub(crate) static POISONED_MUTEX: &str = "Mutex was poisoned";
 
@@ -46,16 +46,15 @@ pub enum ConnStatus {
 //==================================================================================================
 /// Struct for sending requests
 //#[derive(Debug)]
-pub struct EClient<T>
-where
-    T: Wrapper,
+pub struct EClient
 {
-    wrapper: Arc<Mutex<T>>,
     pub(crate) stream: Option<Box<dyn Streamer>>,
     host: String,
     port: u32,
     extra_auth: bool,
     client_id: i32,
+    order_id: i32,
+    evt_chan: (Sender<IncomingMsgCmd>, Receiver<IncomingMsgCmd>),
     pub(crate) server_version: i32,
     conn_time: String,
     pub conn_state: Arc<Mutex<ConnStatus>>,
@@ -63,18 +62,17 @@ where
     disconnect_requested: Arc<AtomicBool>,
 }
 
-impl<T> EClient<T>
-where
-    T: Wrapper + Send + Sync + 'static,
+impl EClient
 {
-    pub fn new(wrapper: Arc<Mutex<T>>) -> Self {
+    pub fn new() -> Self {
         EClient {
-            wrapper: wrapper,
             stream: None,
             host: "".to_string(),
+            order_id: -1,
             port: 0,
             extra_auth: false,
             client_id: 0,
+            evt_chan: channel(),
             server_version: 0,
             conn_time: "".to_string(),
             conn_state: Arc::new(Mutex::new(ConnStatus::DISCONNECTED)),
@@ -96,7 +94,7 @@ where
     pub(crate) fn set_streamer(&mut self, streamer: Option<Box<dyn Streamer>>) {
         self.stream = streamer;
     }
-    //----------------------------------------------------------------------------------------------
+
     /// Establishes a connection to TWS or IB Gateway
     pub fn connect(
         &mut self,
@@ -142,8 +140,8 @@ where
         self.send_bytes(bytearray.as_slice())?;
 
         let mut decoder = Decoder::new(
-            self.wrapper.clone(),
             rx,
+            self.evt_chan.0.clone(),
             self.server_version,
             self.conn_state.clone(),
         );
@@ -188,7 +186,10 @@ where
         Ok(())
     }
 
-    //----------------------------------------------------------------------------------------------
+    pub fn get_event(&self) -> Result<IncomingMsgCmd, TryRecvError> {
+        return self.evt_chan.1.try_recv();
+    }
+
     /// Checks connection status
     pub fn is_connected(&self) -> bool {
         let connected = match *self.conn_state.lock().unwrap().deref() {
@@ -296,7 +297,7 @@ where
     //################################### Market Data
     //##############################################################################################
     /// Call this function to request market data. The market data
-    /// will be returned by the tick_price and tick_size wrapper events.
+    /// will be returned by the tick_price and tick_size events.
     ///
     /// # Arguments
     /// * req_id - The request id. Must be a unique value. When the

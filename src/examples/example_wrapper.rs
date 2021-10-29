@@ -7,58 +7,64 @@ use crate::{
         TickAttribLast, TickByTickType, TickType,
     },
     core::contract::{Contract, ContractDescription, ContractDetails, DeltaNeutralContract},
-    core::errors::IBKRApiLibError,
-    core::execution::{Execution, ExecutionFilter},
-    core::{
-        account_summary_tags::AccountSummaryTags,
-        order::{Order, OrderState, SoftDollarTier},
-        order_condition::TriggerMethod,
-        wrapper::Wrapper,
-    },
-    core::{
-        algo_params::{
-            fill_accumulate_distribute_params, fill_adaptive_params, fill_arrival_price_params,
-            fill_balance_impact_risk_params, fill_close_price_params, fill_csfbinline_params,
-            fill_dark_ice_params, fill_jefferies_vwapparams, fill_min_impact_params,
-            fill_pct_vol_params, fill_price_variant_pct_vol_params, fill_qbalgo_in_line_params,
-            fill_scale_params, fill_size_variant_pct_vol_params, fill_time_variant_pct_vol_params,
-            fill_twap_params, fill_vwap_params,
+        core::errors::IBKRApiLibError,
+        core::execution::{Execution, ExecutionFilter},
+        core::{
+            account_summary_tags::AccountSummaryTags,
+            order::{Order, OrderState, SoftDollarTier},
+            order_condition::TriggerMethod,
+            algo_params::{
+                fill_accumulate_distribute_params, fill_adaptive_params, fill_arrival_price_params,
+                fill_balance_impact_risk_params, fill_close_price_params, fill_csfbinline_params,
+                fill_dark_ice_params, fill_jefferies_vwapparams, fill_min_impact_params,
+                fill_pct_vol_params, fill_price_variant_pct_vol_params, fill_qbalgo_in_line_params,
+                fill_scale_params, fill_size_variant_pct_vol_params, fill_time_variant_pct_vol_params,
+                fill_twap_params, fill_vwap_params,
+            },
+            messages::IncomingMsgCmd,
+            streamer::Streamer,
         },
-        streamer::Streamer,
-    },
-    examples::{
-        contract_samples, fa_allocation_samples, order_samples, scanner_subscription_samples,
-    },
+        examples::{
+            contract_samples, fa_allocation_samples, order_samples, scanner_subscription_samples,
+        },
 };
-use bigdecimal::BigDecimal;
+use rust_decimal::Decimal;
 use chrono;
 use chrono::{DateTime, Utc};
 use log::*;
 use std::borrow::Borrow;
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
-
-const CLIENT_POISONED_MUTEX: &str = "Client mutex was poisoned";
-const CLIENT_IS_NONE: &str = "Client must be assigned!";
+use std::sync::mpsc::TryRecvError;
 
 //==================================================================================================
-/// Example implementation of the Wrapper callback trait.  Just logs callback methods
+/// Example implementation of the Wrapper type.  Just logs callback methods
 //#[derive(Debug)]
-pub struct TestWrapper<T: Streamer + 'static> {
-    pub client: Option<Arc<Mutex<EClient<TestWrapper<T>>>>>,
-    pub next_order_id: i32,
+pub struct ExampleWrapper {
+    pub client: EClient,
+    next_order_id: i32,
     account: String,
 }
 
-impl<T: Streamer> TestWrapper<T> {
+impl ExampleWrapper {
     pub fn new() -> Self {
-        TestWrapper {
-            client: None,
+        ExampleWrapper {
+            client: EClient::new(),
             next_order_id: -1,
             account: "".to_string(),
         }
+    }
+
+    fn process_event(&mut self) -> Result<(), TryRecvError> {
+        match self.client.get_event()? {
+            IncomingMsgCmd::ErrorMsg { req_id, error_code, error_str } => self.error(req_id, error_code, &error_str),
+            IncomingMsgCmd::TickPriceMsg { req_id, tick_type, price, size, tick_attr } =>
+                info!("tick_size -- req_id: {}, tick_type: {}, price: {}, attrib: {}", req_id, tick_type, price, tick_attr),
+            _ => panic!("Received unknown event! Exiting"),
+        }
+
+        Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
@@ -92,53 +98,41 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn account_operations_req(&self) -> Result<(), IBKRApiLibError> {
+    fn account_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
         // Requesting managed accounts
-        let mut locked_client = self
-            .client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX);
-
-        locked_client.req_managed_accts()?;
+        self.client.req_managed_accts()?;
 
         // Requesting family codes
-
-        locked_client.req_family_codes()?;
+        self.client.req_family_codes()?;
 
         // Requesting accounts' summary
         let all_tags = AccountSummaryTags::AllTags.to_string();
-        locked_client.req_account_summary(9001, "All", all_tags.as_str())?;
+        self.client.req_account_summary(9001, "All", all_tags.as_str())?;
 
-        locked_client.req_account_summary(9002, "All", "$LEDGER")?;
+        self.client.req_account_summary(9002, "All", "$LEDGER")?;
 
-        locked_client.req_account_summary(9003, "All", "$LEDGER:EUR")?;
+        self.client.req_account_summary(9003, "All", "$LEDGER:EUR")?;
 
-        locked_client.req_account_summary(9004, "All", "$LEDGER:ALL")?;
+        self.client.req_account_summary(9004, "All", "$LEDGER:ALL")?;
 
-        locked_client.req_account_updates(true, self.account.as_str())?;
+        self.client.req_account_updates(true, self.account.as_str())?;
 
-        locked_client.req_account_updates_multi(9005, self.account.as_str(), "", true)?;
+        self.client.req_account_updates_multi(9005, self.account.as_str(), "", true)?;
 
         // Requesting all accounts' positions.
-        locked_client.req_positions()?;
+        self.client.req_positions()?;
 
-        locked_client.req_positions_multi(9006, &self.account, "")?;
+        self.client.req_positions_multi(9006, &self.account, "")?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    pub fn real_time_bars_operations_req(&self) -> Result<(), IBKRApiLibError> {
+    pub fn real_time_bars_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Requesting real time bars
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_real_time_bars(
+        self.client.req_real_time_bars(
                 3001,
                 contract_samples::us_stock_at_smart().borrow(),
                 1,
@@ -159,31 +153,16 @@ impl<T: Streamer> TestWrapper<T> {
         // Requesting all open orders
         {
             info!("req_all_open_orders...");
-            self.client
-                .as_ref()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .req_all_open_orders()?;
+            self.client.req_all_open_orders()?;
         }
 
         // Taking over orders to be submitted via TWS
         info!("req_auto_open_orders...");
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_auto_open_orders(true)?;
+        self.client.req_auto_open_orders(true)?;
 
         // Requesting this API client's orders
         info!("req_open_orders...");
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_open_orders()?;
+        self.client.req_open_orders()?;
 
         // Placing/ modifying an order - remember to ALWAYS increment the
         // nextValidId after placing an order so it can be used for the next one!
@@ -191,33 +170,22 @@ impl<T: Streamer> TestWrapper<T> {
         // order ID must also be greater than all order IDs returned for orders
         // to orderStatus and openOrder to this client.
 
-        {
-            let next_id = self.next_order_id();
-            info!("Placing order... {}", next_id);
 
-            self.client
-                .as_ref()
-                .expect(CLIENT_IS_NONE)
-                .lock()
-                .expect(CLIENT_POISONED_MUTEX)
-                .place_order(
-                    next_id,
-                    &contract_samples::usstock().borrow(),
-                    order_samples::limit_order("SELL", 1.0, 50.0).borrow(),
-                )?;
-        }
+        let mut next_id = self.next_order_id();
+        info!("Placing order... {}", next_id);
+        self.client.place_order(
+                next_id,
+                &contract_samples::usstock().borrow(),
+                order_samples::limit_order("SELL", 1.0, 50.0).borrow(),
+            )?;
+
 
         let mut fa_order_one_account = order_samples::market_order("BUY", 100.0);
         // Specify the Account Number directly
         fa_order_one_account.account = "DU228250".to_string();
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 fa_order_one_account.borrow(),
@@ -227,13 +195,8 @@ impl<T: Streamer> TestWrapper<T> {
         fa_order_group_eq.fa_group = "Group_Equal_Quantity".to_string();
         fa_order_group_eq.fa_method = "EqualQuantity".to_string();
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::simple_future(),
                 fa_order_group_eq.borrow(),
@@ -245,13 +208,8 @@ impl<T: Streamer> TestWrapper<T> {
         fa_order_group_pc.fa_method = "PctChange".to_string();
         fa_order_group_pc.fa_percentage = "100".to_string();
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::eur_gbp_fx(),
                 fa_order_group_pc.borrow(),
@@ -260,13 +218,8 @@ impl<T: Streamer> TestWrapper<T> {
         let mut fa_order_profile = order_samples::limit_order("BUY", 200.0, 100.0);
         fa_order_profile.fa_profile = "Percent_60_40".to_string();
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::european_stock(),
                 fa_order_profile.borrow(),
@@ -276,86 +229,56 @@ impl<T: Streamer> TestWrapper<T> {
         model_order.account = "DF12345".to_string();
         model_order.model_code = "Technology".to_string(); // model for tech stocks first created in TWS
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 model_order.borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::option_at_box(),
                 order_samples::block("BUY", 50.0, 20.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::option_at_box(),
                 order_samples::box_top("SELL", 10.0).borrow(),
             )?;
 
         info!("Placing combo order...");
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::future_combo_contract(),
                 order_samples::combo_limit_order("SELL", 1.0, 1.0, false).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::stock_combo_contract(),
                 order_samples::combo_market_order("BUY", 1.0, true).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::option_combo_contract(),
                 order_samples::combo_market_order("BUY", 1.0, false).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::stock_combo_contract(),
                 &order_samples::limit_order_for_combo_with_leg_prices(
@@ -366,223 +289,152 @@ impl<T: Streamer> TestWrapper<T> {
                 ),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::discretionary("SELL", 1.0, 45.0, 0.5).borrow(),
             )?;
 
         //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@PROBLEM WITH SECURITY DEFINITION
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::option_at_box(),
                 order_samples::limit_if_touched("BUY", 1.0, 30.0, 34.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::limit_on_close("SELL", 1.0, 34.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::limit_on_open("BUY", 1.0, 35.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::market_if_touched("BUY", 1.0, 30.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::market_on_close("SELL", 1.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::market_on_open("BUY", 1.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::market_order("SELL", 1.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::market_to_limit("BUY", 1.0).borrow(),
             )?;
 
         // @@@@@@@@@@@@@@@@@@@@@@@@@@@@PROBLEM WITH SECURITY DEFINITIONS
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::option_at_ise(),
                 order_samples::midpoint_match("BUY", 1.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::market_to_limit("BUY", 1.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::stop("SELL", 1.0, 34.4).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 &order_samples::stop_limit("BUY", 1.0, 35.0, 33.0),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::simple_future(),
                 order_samples::stop_with_protection("SELL", 1.0, 45.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::sweep_to_fill("BUY", 1.0, 35.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::trailing_stop("SELL", 1.0, 0.5, 30.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::usstock().borrow(),
                 order_samples::trailing_stop_limit("BUY", 1.0, 2.0, 5.0, 50.0).borrow(),
             )?;
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 &contract_samples::us_option_contract(),
                 &order_samples::volatility("SELL", 1.0, 5.0, 2),
             )?;
+
 
         //Interactive Broker's has a 50 messages per second limit, so sleep for 1 sec and continue placing orders
         thread::sleep(Duration::from_secs(1));
@@ -595,66 +447,31 @@ impl<T: Streamer> TestWrapper<T> {
         // self.hedge_sample()?;
 
         // NOTE: the following orders are not supported for Paper Trading
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::usstock().borrow(), order_samples::AtAuction("BUY", 100, 30.0))
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
+        // self.client..as_ref() .expect(CLIENT_IS_NONE)
         // .lock()
         // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::OptionAtBOX(), order_samples::AuctionLimit("SELL", 10, 30.0, 2))
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::OptionAtBOX(), order_samples::AuctionPeggedToStock("BUY", 10, 30, 0.5))
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
+        // self.client..as_ref() .expect(CLIENT_IS_NONE)
         // .lock()
         // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::OptionAtBOX(), order_samples::AuctionRelative("SELL", 10, 0.6))
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::simple_future(), order_samples::MarketWithProtection("BUY", 1))
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
+        // self.client..as_ref() .expect(CLIENT_IS_NONE)
         // .lock()
         // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::usstock().borrow(), order_samples::PassiveRelative("BUY", 1, 0.5))
         //
         // 208813720 (GOOG)
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::usstock().borrow(),
-        // order_samples::PeggedToBenchmark("SELL", 100, 33, True, 0.1, 1, 208813720, "ISLAND", 750, 650, 800))
-        //
+        // self.client..as_ref()
         // STOP ADJUSTABLE ORDERS
         // Order stpParent = order_samples::Stop("SELL", 100, 30)
         // stpParent.OrderId = self.next_order_id()
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(stpParent.OrderId, &contract_samples::EuropeanStock(), stpParent)
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
+        // self.client..as_ref() .expect(CLIENT_IS_NONE)
         // .lock()
         // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::EuropeanStock(), order_samples::AttachAdjustableToStop(stpParent, 35, 32, 33))
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::EuropeanStock(), order_samples::AttachAdjustableToStopLimit(stpParent, 35, 33, 32, 33))
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
+        // self.client..as_ref() .expect(CLIENT_IS_NONE)
         // .lock()
         // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::EuropeanStock(), order_samples::AttachAdjustableToTrail(stpParent, 35, 32, 32, 1, 0))
         //
         // Order lmtParent = order_samples::limit_order("BUY", 100, 30)
         // lmtParent.OrderId = self.next_order_id()
-        // self.client'.as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(lmtParent.OrderId, &contract_samples::EuropeanStock(), lmtParent)
-        // Attached TRAIL adjusted can only be attached to LMT parent orders.
-        // self.client'.as_ref()
+        // self.client..as_ref() self.client..as_ref()
         // .expect(CLIENT_IS_NONE)
         // .lock()
         // .expect(CLIENT_POISONED_MUTEX).place_order( self.next_order_id(), &contract_samples::EuropeanStock(), order_samples::AttachAdjustableToTrailAmount(lmtParent, 34, 32, 33, 0.008))
@@ -663,19 +480,9 @@ impl<T: Streamer> TestWrapper<T> {
         // self.oca_sample()?;
 
         // Request the day's executions
-        // self.client
-        //     .as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX)
-        //     .req_executions(10001, ExecutionFilter::default().borrow())?;
+        // self.client.req_executions(10001, ExecutionFilter::default().borrow())?;
 
-        // self.client
-        // .as_ref()
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX)
-        //     .req_completed_orders(true)?;
+        // self.client.req_completed_orders(true)?;
         thread::sleep(Duration::from_millis(200));
         self.req_global_cancel()?;
 
@@ -685,13 +492,9 @@ impl<T: Streamer> TestWrapper<T> {
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
     fn order_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
         if self.next_order_id != -1 {
-            self.client
-                .as_ref()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .cancel_order(self.next_order_id)?;
+            self.client.cancel_order(self.next_order_id)?;
 
             // Cancel all orders for all accounts
             self.req_global_cancel()?;
@@ -702,38 +505,24 @@ impl<T: Streamer> TestWrapper<T> {
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
     fn bracket_sample(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // BRACKET ORDER
         let bracket =
             order_samples::bracket_order(self.next_order_id(), "BUY", 100.0, 30.0, 40.0, 20.0);
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        self.client.place_order(
                 bracket.0.order_id,
                 contract_samples::european_stock().borrow(),
                 bracket.0.borrow(),
             )?;
         self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        self.client.place_order(
                 bracket.1.order_id,
                 contract_samples::european_stock().borrow(),
                 bracket.1.borrow(),
             )?;
         self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        self.client.place_order(
                 bracket.2.order_id,
                 contract_samples::european_stock().borrow(),
                 bracket.2.borrow(),
@@ -746,6 +535,7 @@ impl<T: Streamer> TestWrapper<T> {
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
     fn condition_samples(&mut self) -> Result<(), IBKRApiLibError> {
+        
         let mut mkt = order_samples::market_order("BUY", 100.0);
         // Order will become active if conditioning criteria is met
         mkt.conditions
@@ -780,13 +570,9 @@ impl<T: Streamer> TestWrapper<T> {
             .push(crate::core::order_condition::OrderConditionEnum::Volume(
                 order_samples::volume_condition(208813720, "SMART", true, 100000, true),
             ));
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        let mut next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 contract_samples::european_stock().borrow(),
                 mkt.borrow(),
@@ -808,13 +594,9 @@ impl<T: Streamer> TestWrapper<T> {
                 ),
             ));
 
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 contract_samples::european_stock().borrow(),
                 lmt.borrow(),
@@ -826,30 +608,21 @@ impl<T: Streamer> TestWrapper<T> {
     #[allow(dead_code)]
     fn hedge_sample(&mut self) -> Result<(), IBKRApiLibError> {
         let mut parent = order_samples::limit_order("BUY", 100.0, 10.0);
-        parent.order_id = self.next_order_id();
+        let mut next_id = self.next_order_id();
+        parent.order_id = next_id;
         parent.transmit = false;
         // Hedge on the currency conversion
         let hedge = order_samples::market_fhedge(parent.order_id, "BUY");
         // Place the parent first...
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        self.client.place_order(
                 parent.order_id,
                 contract_samples::european_stock().borrow(),
                 parent.borrow(),
             )?;
 
         // Then the hedge order
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 contract_samples::eur_gbp_fx().borrow(),
                 hedge.borrow(),
@@ -962,7 +735,8 @@ impl<T: Streamer> TestWrapper<T> {
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
     fn algo_samples(&mut self) -> Result<(), IBKRApiLibError> {
-        // let next_id = self.next_order_id();
+        
+        // 
         // let mut scale_order =
         //     order_samples::relative_pegged_to_primary("BUY", 70000.0, 189.0, 0.01);
 
@@ -979,19 +753,14 @@ impl<T: Streamer> TestWrapper<T> {
         //     10,
         //     40,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     scale_order.borrow(),
         // )?;
 
         // // thread::sleep(Duration::from_secs(1));
 
         let base_order = order_samples::limit_order("BUY", 1000.0, 1.0);
-        let next_id = self.next_order_id();
+        let mut next_id = self.next_order_id();
         let order = &mut base_order.clone();
         fill_arrival_price_params(
             order,
@@ -1003,18 +772,13 @@ impl<T: Streamer> TestWrapper<T> {
             true,
             100000,
         );
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        self.client.place_order(
                 next_id,
                 contract_samples::us_stock_at_smart().borrow(),
                 order,
             )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_dark_ice_params(
         //     order,
@@ -1024,17 +788,12 @@ impl<T: Streamer> TestWrapper<T> {
         //     true,
         //     100000.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
         // // The Time Zone in "StartTime" and "EndTime" attributes is ignored and always defaulted to GMT
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_accumulate_distribute_params(
         //     order,
@@ -1048,16 +807,11 @@ impl<T: Streamer> TestWrapper<T> {
         //     "20161010-12:00:00 GMT",
         //     "20161010-16:00:00 GMT",
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_twap_params(
         //     order,
@@ -1067,16 +821,11 @@ impl<T: Streamer> TestWrapper<T> {
         //     true,
         //     100000.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_vwap_params(
         //     order,
@@ -1087,53 +836,33 @@ impl<T: Streamer> TestWrapper<T> {
         //     true,
         //     100000.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_balance_impact_risk_params(order, 0.1, "Aggressive", true);
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_option_contract().borrow(),
+        //         self.client.ontract_samples::us_option_contract().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_min_impact_params(order, 0.3);
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_option_contract().borrow(),
+        //         self.client.ontract_samples::us_option_contract().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
 
         // let order = &mut base_order.clone();
         // fill_adaptive_params(order, "Normal");
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_close_price_params(
         //     order,
@@ -1143,16 +872,11 @@ impl<T: Streamer> TestWrapper<T> {
         //     true,
         //     100000.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_pct_vol_params(
         //     order,
@@ -1162,16 +886,11 @@ impl<T: Streamer> TestWrapper<T> {
         //     true,
         //     100000.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_price_variant_pct_vol_params(
         //     order,
@@ -1184,16 +903,11 @@ impl<T: Streamer> TestWrapper<T> {
         //     true,
         //     100000.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_size_variant_pct_vol_params(
         //     order,
@@ -1204,16 +918,11 @@ impl<T: Streamer> TestWrapper<T> {
         //     true,
         //     100000.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order,
         // )?;
 
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_time_variant_pct_vol_params(
         //     order,
@@ -1224,17 +933,12 @@ impl<T: Streamer> TestWrapper<T> {
         //     true,
         //     100000.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::us_stock_at_smart().borrow(),
+        //         self.client.ontract_samples::us_stock_at_smart().borrow(),
         //     order.borrow(),
         // )?;
 
         //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ error_string:Specified algorithm is not allowed for this order.
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_jefferies_vwapparams(
         //     order,
@@ -1251,17 +955,12 @@ impl<T: Streamer> TestWrapper<T> {
         //     false,
         //     "Midpoint",
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::jefferies_contract().borrow(),
+        //         self.client.ontract_samples::jefferies_contract().borrow(),
         //     order.borrow(),
         // )?;
 
         //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ error_string:Specified algorithm is not allowed for this order.
-        // let next_id = self.next_order_id();
+        // 
         // let order = &mut base_order.clone();
         // fill_csfbinline_params(
         //     order,
@@ -1278,17 +977,12 @@ impl<T: Streamer> TestWrapper<T> {
         //     100,
         //     35.0,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::csfbcontract().borrow(),
+        //         self.client.ontract_samples::csfbcontract().borrow(),
         //     order.borrow(),
         // )?;
 
         //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ error_string:Specified algorithm is not allowed for this order.
-        // let next_id = self.next_order_id();
+        // 
         // fill_qbalgo_in_line_params(S
         //     order,
         //     "10:00:00 EST",
@@ -1298,12 +992,7 @@ impl<T: Streamer> TestWrapper<T> {
         //     0.25,
         //     true,
         // );
-        //         self.client
-        // .expect(CLIENT_IS_NONE)
-        // .lock()
-        // .expect(CLIENT_POISONED_MUTEX).place_order(
-        //     next_id,
-        //     contract_samples::qbalgo_contract().borrow(),
+        //         self.client.ontract_samples::qbalgo_contract().borrow(),
         //     order,
         // )?;
         Ok(())
@@ -1317,19 +1006,15 @@ impl<T: Streamer> TestWrapper<T> {
             order_samples::limit_order("BUY", 1.0, 11.0),
             order_samples::limit_order("BUY", 1.0, 12.0),
         ];
+        let mut next_id = self.next_order_id();
         order_samples::one_cancels_all(
-            format!("TestOCA_{}", self.next_order_id()).as_ref(),
+            format!("TestOCA_{}", next_id).as_ref(),
             oca_orders.clone(),
             2,
         );
         for o in oca_orders {
-            let next_id = self.next_order_id();
-            self.client
-                .as_ref()
-                .expect(CLIENT_IS_NONE)
-                .lock()
-                .expect(CLIENT_POISONED_MUTEX)
-                .place_order(
+            next_id = self.next_order_id();
+            self.client.place_order(
                     next_id,
                     contract_samples::us_stock_at_smart().borrow(),
                     o.borrow(),
@@ -1344,13 +1029,8 @@ impl<T: Streamer> TestWrapper<T> {
     fn what_if_order_operations(&mut self) -> Result<(), IBKRApiLibError> {
         let mut what_if_order = order_samples::limit_order("SELL", 5.0, 70.0);
         what_if_order.what_if = true;
-        let next_id = self.next_order_id();
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .place_order(
+        let mut next_id = self.next_order_id();
+        self.client.place_order(
                 next_id,
                 contract_samples::us_stock_at_smart().borrow(),
                 what_if_order.borrow(),
@@ -1363,13 +1043,9 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn req_global_cancel(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_global_cancel()?;
+    fn req_global_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_global_cancel()?;
         Ok(())
     }
 
@@ -1381,14 +1057,10 @@ impl<T: Streamer> TestWrapper<T> {
     }
 
     //----------------------------------------------------------------------------------------------
-    pub fn historical_data_operations_req(&self) -> Result<(), IBKRApiLibError> {
+    pub fn historical_data_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
         //Requesting historical data
-        self.client
-            .as_ref()
-            .unwrap()
-            .try_lock()
-            .unwrap()
-            .req_head_time_stamp(
+        self.client.req_head_time_stamp(
                 4101,
                 contract_samples::simple_future().borrow(),
                 "TRADES",
@@ -1399,12 +1071,7 @@ impl<T: Streamer> TestWrapper<T> {
         let dt = Utc::now();
         let query_time = dt.format("%Y%m%d %H:%M:%S").to_string();
         info!("Request Time:  {}", query_time);
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_historical_data(
+        self.client.req_historical_data(
                 4102,
                 contract_samples::simple_future().borrow(),
                 query_time.as_str(),
@@ -1416,12 +1083,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_historical_data(
+        self.client.req_historical_data(
                 4103,
                 contract_samples::simple_future().borrow(),
                 query_time.as_str(),
@@ -1433,12 +1095,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_historical_data(
+        self.client.req_historical_data(
                 4104,
                 contract_samples::eur_gbp_fx().borrow(),
                 "",
@@ -1456,36 +1113,23 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn market_data_type_operations(&self) -> Result<(), IBKRApiLibError> {
+    fn market_data_type_operations(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Switch to live (1) frozen (2) delayed (3) delayed frozen (4).
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_market_data_type(MarketDataTypeEnum::Realtime as i32)?;
+        self.client.req_market_data_type(MarketDataTypeEnum::Realtime as i32)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn tick_data_operations_req(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_market_data_type(MarketDataTypeEnum::DelayedFrozen as i32)?;
+    fn tick_data_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_market_data_type(MarketDataTypeEnum::DelayedFrozen as i32)?;
 
         // Requesting real time market data
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1000,
                 contract_samples::us_stock_at_smart().borrow(),
                 "",
@@ -1493,12 +1137,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1001,
                 contract_samples::stock_combo_contract().borrow(),
                 "",
@@ -1507,12 +1146,7 @@ impl<T: Streamer> TestWrapper<T> {
                 vec![],
             )?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1002,
                 contract_samples::future_combo_contract().borrow(),
                 "",
@@ -1522,12 +1156,7 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Each regulatory snapshot request incurs a 0.01 USD fee
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1003,
                 contract_samples::usstock().borrow(),
                 "",
@@ -1537,12 +1166,7 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Requesting RTVolume (Time & Sales), shortable and Fundamental Ratios generic ticks
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1004,
                 contract_samples::us_stock_at_smart().borrow(),
                 "233,236,258",
@@ -1552,12 +1176,7 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Without the API news subscription this will generate an "invalid tick type" error
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1005,
                 contract_samples::us_stock_at_smart().borrow(),
                 "100",
@@ -1565,12 +1184,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1006,
                 contract_samples::us_stock_at_smart().borrow(),
                 "mdoff,292:BRFG+DJNL",
@@ -1578,12 +1192,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1007,
                 contract_samples::us_stock_at_smart().borrow(),
                 "mdoff,292:BRFUPDN",
@@ -1591,12 +1200,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1008,
                 contract_samples::us_stock_at_smart().borrow(),
                 "mdoff,292:DJ-RT",
@@ -1605,12 +1209,7 @@ impl<T: Streamer> TestWrapper<T> {
                 vec![],
             )?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1009,
                 contract_samples::brfgbroadtape_news_feed().borrow(),
                 "mdoff,292",
@@ -1618,12 +1217,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1010,
                 contract_samples::djnlbroadtape_news_feed().borrow(),
                 "mdoff,292",
@@ -1631,12 +1225,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1011,
                 contract_samples::djtopbroadtape_news_feed().borrow(),
                 "mdoff,292",
@@ -1644,12 +1233,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1012,
                 contract_samples::brfupdnbroadtape_news_feed().borrow(),
                 "mdoff,292",
@@ -1659,12 +1243,7 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Requesting data for an option contract will return the greek values
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1013,
                 contract_samples::option_with_local_symbol().borrow(),
                 "",
@@ -1672,12 +1251,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1014,
                 contract_samples::futures_on_options().borrow(),
                 "",
@@ -1686,12 +1260,7 @@ impl<T: Streamer> TestWrapper<T> {
                 vec![],
             )?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1015,
                 contract_samples::simple_future().borrow(),
                 "mdoff,588",
@@ -1700,12 +1269,7 @@ impl<T: Streamer> TestWrapper<T> {
                 vec![],
             )?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1016,
                 contract_samples::simple_future().borrow(),
                 "",
@@ -1714,12 +1278,7 @@ impl<T: Streamer> TestWrapper<T> {
                 vec![],
             )?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 1017,
                 contract_samples::us_stock_at_smart().borrow(),
                 "mdoff,105",
@@ -1729,26 +1288,17 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Requests description of map of single letter exchange codes to full exchange names
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_smart_components(1018, "a6")?;
+        self.client.req_smart_components(1018, "a6")?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn market_depth_operations_req(&self) -> Result<(), IBKRApiLibError> {
+    fn market_depth_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Requesting the Deep Book
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_depth(
+        self.client.req_mkt_depth(
                 2001,
                 contract_samples::eur_gbp_fx().borrow(),
                 5,
@@ -1756,12 +1306,7 @@ impl<T: Streamer> TestWrapper<T> {
                 vec![],
             )?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_depth(
+        self.client.req_mkt_depth(
                 2002,
                 contract_samples::us_stock_at_smart().borrow(),
                 5,
@@ -1770,33 +1315,19 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Request list of exchanges sending market depth to UpdateMktDepthL2()
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_depth_exchanges()?;
+        self.client.req_mkt_depth_exchanges()?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn options_operations_req(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_sec_def_opt_params(0, "IBM", "", "STK", 8314)?;
+    fn options_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_sec_def_opt_params(0, "IBM", "", "STK", 8314)?;
 
         // Calculating implied volatility
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .calculate_implied_volatility(
+        self.client.calculate_implied_volatility(
                 5001,
                 contract_samples::option_at_box().borrow(),
                 5.0,
@@ -1805,12 +1336,7 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Calculating option's price
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .calculate_option_price(
+        self.client.calculate_option_price(
                 5002,
                 contract_samples::option_at_box().borrow(),
                 0.22,
@@ -1819,12 +1345,7 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Exercising options
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .exercise_options(
+        self.client.exercise_options(
                 5003,
                 contract_samples::option_with_trading_class().borrow(),
                 1,
@@ -1838,21 +1359,12 @@ impl<T: Streamer> TestWrapper<T> {
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
     fn market_scanners_perations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Requesting list of valid scanner parameters which can be used in TWS
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_scanner_parameters()?;
+        self.client.req_scanner_parameters()?;
 
         // Triggering a scanner subscription
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_scanner_subscription(
+        self.client.req_scanner_subscription(
                 7001,
                 scanner_subscription_samples::high_opt_volume_pcratio_usindexes(),
                 vec![],
@@ -1874,39 +1386,18 @@ impl<T: Streamer> TestWrapper<T> {
             "10000".to_string(),
         ));
 
-        let result = self
-            .client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_scanner_subscription(
+        let result = self.client.req_scanner_subscription(
                 7002,
                 scanner_subscription_samples::hot_usstk_by_volume(),
                 vec![],
                 tagvalues,
-            ); // requires TWS v973 +
-        if result.is_err() {
-            match result.unwrap_err() {
-                IBKRApiLibError::ApiError(err) => self.error(
-                    err.req_id,
-                    err.code.as_str().parse().unwrap(),
-                    err.description.as_ref(),
-                ),
-                _ => {}
-            }
-        }
+            )?; // requires TWS v973 +
 
         let aaplcon_idtag = vec![TagValue::new(
             "underConID".to_string(),
             "265598".to_string(),
         )];
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_scanner_subscription(
+        self.client.req_scanner_subscription(
                 7003,
                 scanner_subscription_samples::complex_orders_and_trades(),
                 vec![],
@@ -1918,70 +1409,41 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn fundamentals_operations_req(&self) -> Result<(), IBKRApiLibError> {
+    fn fundamentals_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Requesting Fundamentals
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_fundamental_data(
+        self.client.req_fundamental_data(
                 8001,
                 contract_samples::usstock().borrow(),
                 "ReportsFinSummary",
                 vec![],
             )?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_fundamental_data(
+        self.client.req_fundamental_data(
                 8002,
                 contract_samples::us_stock_at_smart().borrow(),
                 "ReportSnapshot",
                 vec![],
             )?; // for company overview
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_fundamental_data(
+        self.client.req_fundamental_data(
                 8003,
                 contract_samples::us_stock_at_smart().borrow(),
                 "ReportRatios",
                 vec![],
             )?; // for financial ratios
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_fundamental_data(
+        self.client.req_fundamental_data(
                 8004,
                 contract_samples::us_stock_at_smart().borrow(),
                 "ReportsFinStatements",
                 vec![],
             )?; // for financial statements
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_fundamental_data(
+        self.client.req_fundamental_data(
                 8005,
                 contract_samples::us_stock_at_smart().borrow(),
                 "RESC",
                 vec![],
             )?; // for analyst estimates
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_fundamental_data(
+        self.client.req_fundamental_data(
                 8006,
                 contract_samples::us_stock_at_smart().borrow(),
                 "CalendarReport",
@@ -1994,94 +1456,46 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn contract_operations(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(210, contract_samples::option_for_query().borrow())?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(211, contract_samples::eur_gbp_fx().borrow())?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(212, contract_samples::bond().borrow())?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(213, contract_samples::futures_on_options().borrow())?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(214, contract_samples::simple_future().borrow())?;
+    fn contract_operations(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_contract_details(210, contract_samples::option_for_query().borrow())?;
+        self.client.req_contract_details(211, contract_samples::eur_gbp_fx().borrow())?;
+        self.client.req_contract_details(212, contract_samples::bond().borrow())?;
+        self.client.req_contract_details(213, contract_samples::futures_on_options().borrow())?;
+        self.client.req_contract_details(214, contract_samples::simple_future().borrow())?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_matching_symbols(211, "IB")?;
+        self.client.req_matching_symbols(211, "IB")?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn tick_by_tick_operations_req(&self) -> Result<(), IBKRApiLibError> {
+    fn tick_by_tick_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Requesting tick - by - tick data (only refresh)
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_tick_by_tick_data(
+        self.client.req_tick_by_tick_data(
                 19001,
                 contract_samples::usstock().borrow(),
                 TickByTickType::AllLast,
                 0,
                 false,
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_tick_by_tick_data(
+        self.client.req_tick_by_tick_data(
                 19002,
                 contract_samples::european_stock2().borrow(),
                 TickByTickType::Last,
                 0,
                 false,
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_tick_by_tick_data(
+        self.client.req_tick_by_tick_data(
                 19003,
                 contract_samples::european_stock2().borrow(),
                 TickByTickType::Last,
                 0,
                 true,
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_tick_by_tick_data(
+        self.client.req_tick_by_tick_data(
                 19004,
                 contract_samples::eur_gbp_fx().borrow(),
                 TickByTickType::Last,
@@ -2090,48 +1504,28 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Requesting tick - by - tick data (refresh + historicalticks)
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_tick_by_tick_data(
+        self.client.req_tick_by_tick_data(
                 19005,
                 contract_samples::european_stock2().borrow(),
                 TickByTickType::Last,
                 10,
                 false,
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_tick_by_tick_data(
+        self.client.req_tick_by_tick_data(
                 19006,
                 contract_samples::european_stock2().borrow(),
                 TickByTickType::Last,
                 10,
                 false,
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_tick_by_tick_data(
+        self.client.req_tick_by_tick_data(
                 19007,
                 contract_samples::european_stock2().borrow(),
                 TickByTickType::Last,
                 10,
                 false,
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_tick_by_tick_data(
+        self.client.req_tick_by_tick_data(
                 19008,
                 contract_samples::eur_gbp_fx().borrow(),
                 TickByTickType::Last,
@@ -2144,13 +1538,9 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn historical_ticks_operations(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_historical_ticks(
+    fn historical_ticks_operations(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_historical_ticks(
                 18001,
                 contract_samples::usstock().borrow(),
                 "20170712 21:39:33",
@@ -2161,12 +1551,7 @@ impl<T: Streamer> TestWrapper<T> {
                 true,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_historical_ticks(
+        self.client.req_historical_ticks(
                 18002,
                 contract_samples::us_stock_at_smart().borrow(),
                 "20170712 21:39:33",
@@ -2177,12 +1562,7 @@ impl<T: Streamer> TestWrapper<T> {
                 true,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_historical_ticks(
+        self.client.req_historical_ticks(
                 18003,
                 contract_samples::us_stock_at_smart().borrow(),
                 "20170712 21:39:33",
@@ -2199,45 +1579,28 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn histogram_operations_req(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_histogram_data(4002, contract_samples::usstock().borrow(), false, "3 days")?;
+    fn histogram_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_histogram_data(4002, contract_samples::usstock().borrow(), false, "3 days")?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn histogram_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_histogram_data(4002)
+    fn histogram_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.cancel_histogram_data(4002)
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn continuous_futures_operations_req(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(18001, contract_samples::cont_fut().borrow())?;
+    fn continuous_futures_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_contract_details(18001, contract_samples::cont_fut().borrow())?;
 
         let time_str = Utc::now().format("%Y%m%d %H:%M:%S");
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_historical_data(
+        self.client.req_historical_data(
                 18002,
                 contract_samples::cont_fut().borrow(),
                 time_str.to_string().as_str(),
@@ -2255,85 +1618,44 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn pnl_operations_req(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_pnl(17001, "DU228243", "")?;
+    fn pnl_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_pnl(17001, "DU228243", "")?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_pnl_single(17002, "DU228243", "", 8314)?;
+        self.client.req_pnl_single(17002, "DU228243", "", 8314)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn pnl_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_pnl(17001)?;
+    fn pnl_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.cancel_pnl(17001)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_pnl_single(17002)?;
+        self.client.cancel_pnl_single(17002)?;
 
         Ok(())
     }
 
     //--------------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn market_rule_operations(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(17001, contract_samples::usstock().borrow())?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(17002, contract_samples::bond().borrow())?;
+    fn market_rule_operations(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_contract_details(17001, contract_samples::usstock().borrow())?;
+        self.client.req_contract_details(17002, contract_samples::bond().borrow())?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_market_rule(26)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_market_rule(239)?;
+        self.client.req_market_rule(26)?;
+        self.client.req_market_rule(239)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn reroute_cfd_operations(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+    fn reroute_cfd_operations(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.req_mkt_data(
                 16001,
                 contract_samples::usstock_cfd().borrow(),
                 "",
@@ -2341,12 +1663,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 16002,
                 contract_samples::european_stock_cfd().borrow(),
                 "",
@@ -2354,12 +1671,7 @@ impl<T: Streamer> TestWrapper<T> {
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 16003,
                 contract_samples::cash_cfd().borrow(),
                 "",
@@ -2368,36 +1680,21 @@ impl<T: Streamer> TestWrapper<T> {
                 vec![],
             )?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_depth(
+        self.client.req_mkt_depth(
                 16004,
                 contract_samples::usstock_cfd().borrow(),
                 10,
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_depth(
+        self.client.req_mkt_depth(
                 16005,
                 contract_samples::european_stock_cfd().borrow(),
                 10,
                 false,
                 vec![],
             )?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_depth(
+        self.client.req_mkt_depth(
                 16006,
                 contract_samples::cash_cfd().borrow(),
                 10,
@@ -2410,80 +1707,37 @@ impl<T: Streamer> TestWrapper<T> {
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn financial_advisor_operations(&self) -> Result<(), IBKRApiLibError> {
+    fn financial_advisor_operations(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Requesting FA information
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .request_fa(FaDataType::ALIASES)?;
+        self.client.request_fa(FaDataType::ALIASES)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .request_fa(FaDataType::GROUPS)?;
+        self.client.request_fa(FaDataType::GROUPS)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .request_fa(FaDataType::PROFILES)?;
+        self.client.request_fa(FaDataType::PROFILES)?;
 
         // Replacing FA information - Fill in with the appropriate XML string.
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .replace_fa(FaDataType::GROUPS, fa_allocation_samples::FA_ONE_GROUP)?;
+        self.client.replace_fa(FaDataType::GROUPS, fa_allocation_samples::FA_ONE_GROUP)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .replace_fa(FaDataType::GROUPS, fa_allocation_samples::FA_TWO_GROUPS)?;
+        self.client.replace_fa(FaDataType::GROUPS, fa_allocation_samples::FA_TWO_GROUPS)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .replace_fa(FaDataType::PROFILES, fa_allocation_samples::FA_ONE_PROFILE)?;
+        self.client.replace_fa(FaDataType::PROFILES, fa_allocation_samples::FA_ONE_PROFILE)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .replace_fa(FaDataType::PROFILES, fa_allocation_samples::FA_TWO_PROFILES)?;
+        self.client.replace_fa(FaDataType::PROFILES, fa_allocation_samples::FA_TWO_PROFILES)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_soft_dollar_tiers(14001)?;
+        self.client.req_soft_dollar_tiers(14001)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn news_operations_req(&self) -> Result<(), IBKRApiLibError> {
+    fn news_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Requesting news ticks
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_mkt_data(
+        self.client.req_mkt_data(
                 10001,
                 contract_samples::usstock().borrow(),
                 "mdoff,258",
@@ -2493,528 +1747,218 @@ impl<T: Streamer> TestWrapper<T> {
             )?;
 
         // Returns list of subscribed news providers
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_news_providers()?;
+        self.client.req_news_providers()?;
 
         // Returns body of news article given article ID
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_news_article(10002, "BRFG", "BRFG4fb9da2", vec![])?;
+        self.client.req_news_article(10002, "BRFG", "BRFG4fb9da2", vec![])?;
 
         // Returns list of historical news headlines with IDs
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_historical_news(10003, 8314, "BRFG", "", "", 10, vec![])?;
+        self.client.req_historical_news(10003, 8314, "BRFG", "", "", 10, vec![])?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_contract_details(10004, contract_samples::news_feed_for_query().borrow())?;
+        self.client.req_contract_details(10004, contract_samples::news_feed_for_query().borrow())?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn news_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
+    fn news_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Canceling news ticks
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(10001)
+        self.client.cancel_mkt_data(10001)
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn bulletins_operations_req(&self) -> Result<(), IBKRApiLibError> {
+    fn bulletins_operations_req(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Requesting Interactive Broker's news bulletins_operations_req
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_news_bulletins(true)
+        self.client.req_news_bulletins(true)
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn bulletins_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
+    fn bulletins_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Canceling IB's news bulletins_operations_req
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_news_bulletins()
+        self.client.cancel_news_bulletins()
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn miscelaneous_operations(&self) -> Result<(), IBKRApiLibError> {
+    fn miscelaneous_operations(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Request TWS' current time
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_current_time()?;
+        self.client.req_current_time()?;
         // Setting TWS logging level
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .set_server_log_level(1)?;
+        self.client.set_server_log_level(1)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn linking_operations(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .query_display_groups(19001)?;
+    fn linking_operations(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.query_display_groups(19001)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .subscribe_to_group_events(19002, 1)?;
+        self.client.subscribe_to_group_events(19002, 1)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .update_display_group(19002, "8314@SMART")?;
+        self.client.update_display_group(19002, "8314@SMART")?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .unsubscribe_from_group_events(19002)?;
+        self.client.unsubscribe_from_group_events(19002)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn tick_by_tick_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_tick_by_tick_data(19001)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_tick_by_tick_data(19002)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_tick_by_tick_data(19003)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_tick_by_tick_data(19004)?;
+    fn tick_by_tick_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.cancel_tick_by_tick_data(19001)?;
+        self.client.cancel_tick_by_tick_data(19002)?;
+        self.client.cancel_tick_by_tick_data(19003)?;
+        self.client.cancel_tick_by_tick_data(19004)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_tick_by_tick_data(19005)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_tick_by_tick_data(19006)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_tick_by_tick_data(19007)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_tick_by_tick_data(19008)?;
+        self.client.cancel_tick_by_tick_data(19005)?;
+        self.client.cancel_tick_by_tick_data(19006)?;
+        self.client.cancel_tick_by_tick_data(19007)?;
+        self.client.cancel_tick_by_tick_data(19008)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn continuous_futures_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_historical_data(18002)
+    fn continuous_futures_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.cancel_historical_data(18002)
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn fundamentals_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_fundamental_data(8001)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_fundamental_data(8002)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_fundamental_data(8003)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_fundamental_data(8004)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_fundamental_data(8005)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_fundamental_data(8006)?;
+    fn fundamentals_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.cancel_fundamental_data(8001)?;
+        self.client.cancel_fundamental_data(8002)?;
+        self.client.cancel_fundamental_data(8003)?;
+        self.client.cancel_fundamental_data(8004)?;
+        self.client.cancel_fundamental_data(8005)?;
+        self.client.cancel_fundamental_data(8006)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn market_scanners_cancel(&self) -> Result<(), IBKRApiLibError> {
+    fn market_scanners_cancel(&mut self) -> Result<(), IBKRApiLibError> {
         // Canceling the scanner subscription
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_scanner_subscription(7001)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_scanner_subscription(7002)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_scanner_subscription(7003)?;
+        self.client.cancel_scanner_subscription(7001)?;
+        self.client.cancel_scanner_subscription(7002)?;
+        self.client.cancel_scanner_subscription(7003)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn options_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
+    fn options_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Canceling implied volatility
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_calculate_implied_volatility(5001)?;
+        self.client.cancel_calculate_implied_volatility(5001)?;
         // Canceling option's price calculation
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_calculate_option_price(5002)?;
+        self.client.cancel_calculate_option_price(5002)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn historical_data_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_head_time_stamp(4101)?;
+    fn historical_data_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
+        self.client.cancel_head_time_stamp(4101)?;
 
         // Canceling historical data requests
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_historical_data(4102)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_historical_data(4103)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_historical_data(4104)?;
+        self.client.cancel_historical_data(4102)?;
+        self.client.cancel_historical_data(4103)?;
+        self.client.cancel_historical_data(4104)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn real_time_bars_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
+    fn real_time_bars_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Canceling real time bars
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_real_time_bars(3001)
+        self.client.cancel_real_time_bars(3001)
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn market_depth_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
+    fn market_depth_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Canceling the Deep Book request
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_depth(2001, false)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_depth(2002, true)?;
+        self.client.cancel_mkt_depth(2001, false)?;
+        self.client.cancel_mkt_depth(2002, true)?;
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn tick_data_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
+    fn tick_data_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        
         // Canceling the market data subscription
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1000)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1001)?;
+        self.client.cancel_mkt_data(1000)?;
+        self.client.cancel_mkt_data(1001)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1004)?;
+        self.client.cancel_mkt_data(1004)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1005)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1006)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1007)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1008)?;
+        self.client.cancel_mkt_data(1005)?;
+        self.client.cancel_mkt_data(1006)?;
+        self.client.cancel_mkt_data(1007)?;
+        self.client.cancel_mkt_data(1008)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1009)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1010)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1011)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1012)?;
+        self.client.cancel_mkt_data(1009)?;
+        self.client.cancel_mkt_data(1010)?;
+        self.client.cancel_mkt_data(1011)?;
+        self.client.cancel_mkt_data(1012)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1013)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1014)?;
+        self.client.cancel_mkt_data(1013)?;
+        self.client.cancel_mkt_data(1014)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1015)?;
+        self.client.cancel_mkt_data(1015)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1016)?;
+        self.client.cancel_mkt_data(1016)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_mkt_data(1017)?;
+        self.client.cancel_mkt_data(1017)?;
 
         Ok(())
     }
+
 
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
-    fn account_operations_cancel(&self) -> Result<(), IBKRApiLibError> {
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_account_summary(9001)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_account_summary(9002)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_account_summary(9003)?;
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_account_summary(9004)?;
+    fn account_operations_cancel(&mut self) -> Result<(), IBKRApiLibError> {
+        self.client.cancel_account_summary(9001)?;
+        self.client.cancel_account_summary(9002)?;
+        self.client.cancel_account_summary(9003)?;
+        self.client.cancel_account_summary(9004)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .req_account_updates(false, self.account.as_str())?;
+        self.client.req_account_updates(false, self.account.as_str())?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_account_updates_multi(9005)?;
+        self.client.cancel_account_updates_multi(9005)?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_positions()?;
+        self.client.cancel_positions()?;
 
-        self.client
-            .as_ref()
-            .expect(CLIENT_IS_NONE)
-            .lock()
-            .expect(CLIENT_POISONED_MUTEX)
-            .cancel_positions_multi(9006)?;
+        self.client.cancel_positions_multi(9006)?;
 
         Ok(())
     }
-}
 
-impl<T> Wrapper for TestWrapper<T>
-where
-    T: Streamer + 'static,
-{
     fn error(&mut self, req_id: i32, error_code: i32, error_string: &str) {
+        
         error!(
             "req_id: {} ,error_code: {} , error_string:{}",
             req_id, error_code, error_string
@@ -3023,16 +1967,19 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn win_error(&mut self, text: &str, last_error: i32) {
+        
         error!("text: {} , last_error:{}", text, last_error);
     }
 
     //----------------------------------------------------------------------------------------------
     fn connect_ack(&mut self) {
+        
         info!("Connected.");
     }
 
     //----------------------------------------------------------------------------------------------
     fn market_data_type(&mut self, req_id: i32, market_data_type: i32) {
+        
         info!(
             "market_data_type -- req_id: {}, market_data_type: {}",
             req_id, market_data_type
@@ -3041,6 +1988,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_price(&mut self, req_id: i32, tick_type: TickType, price: f64, attrib: TickAttrib) {
+        
         info!(
             "tick_size -- req_id: {}, tick_type: {}, price: {}, attrib: {}",
             req_id, tick_type, price, attrib
@@ -3049,6 +1997,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_size(&mut self, req_id: i32, tick_type: TickType, size: i32) {
+        
         info!(
             "tick_size -- req_id: {}, tick_type: {}, size: {}",
             req_id, tick_type, size
@@ -3057,11 +2006,13 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_snapshot_end(&mut self, req_id: i32) {
+        
         info!("tick_snapshot_end -- req_id: {}", req_id);
     }
 
     //----------------------------------------------------------------------------------------------
     fn tick_generic(&mut self, req_id: i32, tick_type: TickType, value: f64) {
+        
         info!(
             "tick_generic -- req_id: {}, tick_type: {}, value: {}",
             req_id, tick_type, value
@@ -3070,6 +2021,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_string(&mut self, req_id: i32, tick_type: TickType, value: &str) {
+        
         info!(
             "tick_string -- req_id: {}, tick_type: {}, value: {}",
             req_id, tick_type, value
@@ -3078,6 +2030,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_efp(
+        
         &mut self,
         req_id: i32,
         tick_type: TickType,
@@ -3114,6 +2067,7 @@ where
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
     fn order_status(
+        
         &mut self,
         order_id: i32,
         status: &str,
@@ -3137,6 +2091,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn open_order(
+        
         &mut self,
         order_id: i32,
         contract: Contract,
@@ -3151,16 +2106,19 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn open_order_end(&mut self) {
+        
         info!("open_order_end. (no parmeters passed)");
     }
 
     //----------------------------------------------------------------------------------------------
     fn connection_closed(&mut self) {
+        
         info!("connection_closed. (no parmeters passed)");
     }
 
     //----------------------------------------------------------------------------------------------
     fn update_account_value(&mut self, key: &str, val: &str, currency: &str, account_name: &str) {
+        
         info!(
             "key: {}, value: {}, ccy: {}, account: {}.",
             key, val, currency, account_name
@@ -3169,6 +2127,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn update_portfolio(
+        
         &mut self,
         contract: Contract,
         position: f64,
@@ -3195,16 +2154,19 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn update_account_time(&mut self, time_stamp: &str) {
+        
         info!("update_account_time: {}.", time_stamp);
     }
 
     //----------------------------------------------------------------------------------------------
     fn account_download_end(&mut self, account_name: &str) {
+        
         info!("account_download_end: {}.", account_name);
     }
 
     //----------------------------------------------------------------------------------------------
     fn next_valid_id(&mut self, order_id: i32) {
+        
         self.next_order_id = order_id;
         info!("next_valid_id -- order_id: {}", order_id);
 
@@ -3215,6 +2177,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn contract_details(&mut self, req_id: i32, contract_details: ContractDetails) {
+        
         info!(
             "contract_details -- req_id: {}, contract_details: {}",
             req_id, contract_details
@@ -3223,6 +2186,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn bond_contract_details(&mut self, req_id: i32, contract_details: ContractDetails) {
+        
         info!(
             "bond_contract_details -- req_id: {}, contract_details: {}",
             req_id, contract_details
@@ -3231,10 +2195,12 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn contract_details_end(&mut self, req_id: i32) {
+        
         info!("contract_details_end -- req_id: {}", req_id);
     }
 
     fn exec_details(&mut self, req_id: i32, contract: Contract, execution: Execution) {
+        
         info!(
             "exec_details -- req_id: {}, contract: {}, execution: {}",
             req_id, contract, execution
@@ -3243,11 +2209,13 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn exec_details_end(&mut self, req_id: i32) {
+        
         info!("exec_details_end -- req_id: {}", req_id);
     }
 
     //----------------------------------------------------------------------------------------------
     fn update_mkt_depth(
+        
         &mut self,
         req_id: i32,
         position: i32,
@@ -3264,6 +2232,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn update_mkt_depth_l2(
+        
         &mut self,
         req_id: i32,
         position: i32,
@@ -3282,6 +2251,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn update_news_bulletin(
+        
         &mut self,
         msg_id: i32,
         msg_type: i32,
@@ -3296,6 +2266,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn managed_accounts(&mut self, accounts_list: &str) {
+        
         info!("managed_accounts -- accounts_list: {}", accounts_list);
         let _split = accounts_list.split(",");
         //self.account = split;
@@ -3303,16 +2274,19 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn receive_fa(&mut self, fa_data: FaDataType, cxml: &str) {
+        
         info!("receive_fa -- fa_data: {}, cxml: {}", fa_data, cxml);
     }
 
     //----------------------------------------------------------------------------------------------
     fn historical_data(&mut self, req_id: i32, bar: BarData) {
+        
         info!("historical_data -- req_id: {}, bar: {}", req_id, bar);
     }
 
     //----------------------------------------------------------------------------------------------
     fn historical_data_end(&mut self, req_id: i32, start: &str, end: &str) {
+        
         info!(
             "historical_data_end -- req_id: {}, start: {}, end: {}",
             req_id, start, end
@@ -3321,11 +2295,13 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn scanner_parameters(&mut self, xml: &str) {
+        
         info!("scanner_parameters -- xml: {}", xml);
     }
 
     //----------------------------------------------------------------------------------------------
     fn scanner_data(
+        
         &mut self,
         req_id: i32,
         rank: i32,
@@ -3348,11 +2324,13 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn scanner_data_end(&mut self, req_id: i32) {
+        
         info!("scanner_data_end -- req_id: {}", req_id);
     }
 
     //----------------------------------------------------------------------------------------------
     fn realtime_bar(&mut self, req_id: i32, bar: RealTimeBar) {
+        
         info!(
             "realtime_bar -- req_id: {}, date_time: {}, open: {}, high: {}, low: {}, close: {}, volume: {}, wap: {}, count: {}",
             req_id,
@@ -3369,6 +2347,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn current_time(&mut self, time: i64) {
+        
         // Creates a new SystemTime from the specified number of whole seconds
         let d = UNIX_EPOCH + Duration::from_secs(time as u64);
         // Create DateTime from SystemTime
@@ -3380,6 +2359,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn fundamental_data(&mut self, req_id: i32, data: &str) {
+        
         info!(
             "fundamental_data -- req_id: {}, delta_neutral_contract: {}",
             req_id, data
@@ -3388,6 +2368,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn delta_neutral_validation(
+        
         &mut self,
         req_id: i32,
         delta_neutral_contract: DeltaNeutralContract,
@@ -3400,6 +2381,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn commission_report(&mut self, commission_report: CommissionReport) {
+        
         info!(
             "commission_report -- commission_report: {}",
             commission_report
@@ -3408,6 +2390,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn position(&mut self, account: &str, contract: Contract, position: f64, avg_cost: f64) {
+        
         info!(
             "position -- account: {}, contract: [{}], position: {}, avg_cost: {}",
             account, contract, position, avg_cost
@@ -3416,11 +2399,13 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn position_end(&mut self) {
+        
         info!("position_end -- (no params are passed in this one)");
     }
 
     //----------------------------------------------------------------------------------------------
     fn account_summary(
+        
         &mut self,
         req_id: i32,
         account: &str,
@@ -3436,16 +2421,19 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn account_summary_end(&mut self, req_id: i32) {
+        
         info!("account_summary_end -- req_id: {}", req_id);
     }
 
     //----------------------------------------------------------------------------------------------
     fn verify_message_api(&mut self, api_data: &str) {
+        
         info!("verify_message_api -- api_data: {}", api_data);
     }
 
     //----------------------------------------------------------------------------------------------
     fn verify_completed(&mut self, is_successful: bool, error_text: &str) {
+        
         info!(
             "verify_completed -- is_successful: {}, error_text: {}",
             is_successful, error_text
@@ -3454,6 +2442,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn verify_and_auth_message_api(&mut self, api_data: &str, xyz_challange: &str) {
+        
         info!(
             "verify_and_auth_message_api -- api_data: {}, xyz_challange: {}",
             api_data, xyz_challange
@@ -3462,6 +2451,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn verify_and_auth_completed(&mut self, is_successful: bool, error_text: &str) {
+        
         info!(
             "verify_and_auth_completed -- is_successful: {}, error_text: {}",
             is_successful, error_text
@@ -3470,6 +2460,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn display_group_list(&mut self, req_id: i32, groups: &str) {
+        
         info!(
             "display_group_list -- req_id: {}, error_text: {}",
             req_id, groups
@@ -3478,6 +2469,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn display_group_updated(&mut self, req_id: i32, contract_info: &str) {
+        
         info!(
             "display_group_updated -- req_id: {}, contract_info: {}",
             req_id, contract_info
@@ -3486,6 +2478,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn position_multi(
+        
         &mut self,
         req_id: i32,
         account: &str,
@@ -3503,6 +2496,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn position_multi_end(&mut self, req_id: i32) {
+        
         info!("position_multi_end -- req_id: {}", req_id);
     }
 
@@ -3566,7 +2560,7 @@ where
         trading_class: &str,
         multiplier: &str,
         expirations: HashSet<String>,
-        strikes: HashSet<BigDecimal>,
+        strikes: HashSet<Decimal>,
     ) {
         info!(
             "tick_option_computation -- req_id: {}, exchange: {}, underlying_con_id: {}, \
@@ -3583,12 +2577,13 @@ where
             strikes
                 .iter()
                 .map(|x| x.clone())
-                .collect::<Vec<BigDecimal>>()
+                .collect::<Vec<Decimal>>()
         );
     }
 
     //----------------------------------------------------------------------------------------------
     fn security_definition_option_parameter_end(&mut self, req_id: i32) {
+        
         info!(
             "security_definition_option_parameter_end -- req_id: {}",
             req_id
@@ -3597,6 +2592,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn soft_dollar_tiers(&mut self, req_id: i32, tiers: Vec<SoftDollarTier>) {
+        
         info!(
             "soft_dollar_tiers -- req_id: {}, tiers: {:?}",
             req_id, tiers
@@ -3605,11 +2601,13 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn family_codes(&mut self, family_codes: Vec<FamilyCode>) {
+        
         info!("family_codes -- family_codes: {:?}", family_codes);
     }
 
     //----------------------------------------------------------------------------------------------
     fn symbol_samples(&mut self, req_id: i32, contract_descriptions: Vec<ContractDescription>) {
+        
         info!(
             "symbol_samples -- req_id: {}, contract_descriptions: {:?}",
             req_id, contract_descriptions
@@ -3618,6 +2616,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn mkt_depth_exchanges(&mut self, depth_mkt_data_descriptions: Vec<DepthMktDataDescription>) {
+        
         info!(
             "mkt_depth_exchanges -- depth_mkt_data_descriptions: {:?}",
             depth_mkt_data_descriptions
@@ -3626,6 +2625,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_news(
+        
         &mut self,
         ticker_id: i32,
         time_stamp: i32,
@@ -3643,6 +2643,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn smart_components(&mut self, req_id: i32, smart_components: Vec<SmartComponent>) {
+        
         info!(
             "smart_components -- req_id: {}, smart_components: {:?}",
             req_id, smart_components
@@ -3651,6 +2652,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_req_params(
+        
         &mut self,
         ticker_id: i32,
         min_tick: f64,
@@ -3665,11 +2667,13 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn news_providers(&mut self, news_providers: Vec<NewsProvider>) {
+        
         info!("news_providers -- news_providers: {:?}", news_providers);
     }
 
     //----------------------------------------------------------------------------------------------
     fn news_article(&mut self, request_id: i32, article_type: i32, article_text: &str) {
+        
         info!(
             "news_article -- request_id: {}, article_type: {}, article_text: {}",
             request_id, article_type, article_text
@@ -3678,6 +2682,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn historical_news(
+        
         &mut self,
         request_id: i32,
         time: &str,
@@ -3693,6 +2698,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn historical_news_end(&mut self, request_id: i32, has_more: bool) {
+        
         info!(
             "historical_news_end -- request_id: {}, has_more: {}",
             request_id, has_more
@@ -3701,6 +2707,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn head_timestamp(&mut self, req_id: i32, head_timestamp: &str) {
+        
         info!(
             "head_timestamp -- req_id: {}, head_timestamp: {}",
             req_id, head_timestamp
@@ -3709,15 +2716,18 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn histogram_data(&mut self, req_id: i32, items: Vec<HistogramData>) {
+        
         info!("histogram_data -- req_id: {}, items: {:?}", req_id, items);
     }
 
     fn historical_data_update(&mut self, req_id: i32, bar: BarData) {
+        
         info!("historical_data_update -- req_id: {}, bar: {}", req_id, bar);
     }
 
     //----------------------------------------------------------------------------------------------
     fn reroute_mkt_data_req(&mut self, req_id: i32, con_id: i32, exchange: &str) {
+        
         info!(
             "reroute_mkt_data_req -- req_id: {}, con_id: {}, exchange: {}",
             req_id, con_id, exchange
@@ -3726,6 +2736,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn reroute_mkt_depth_req(&mut self, req_id: i32, con_id: i32, exchange: &str) {
+        
         info!(
             "reroute_mkt_depth_req -- req_id: {}, con_id: {}, exchange: {}",
             req_id, con_id, exchange
@@ -3734,6 +2745,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn market_rule(&mut self, market_rule_id: i32, price_increments: Vec<PriceIncrement>) {
+        
         info!(
             "market_rule -- market_rule_id: {}, price_increments: {:?}",
             market_rule_id, price_increments
@@ -3742,6 +2754,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn pnl(&mut self, req_id: i32, daily_pn_l: f64, unrealized_pn_l: f64, realized_pn_l: f64) {
+        
         info!(
             "pnl -- req_id: {}, daily_pn_l: {}, unrealized_pn_l: {}, realized_pn_l: {})",
             req_id, daily_pn_l, unrealized_pn_l, realized_pn_l
@@ -3750,6 +2763,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn pnl_single(
+        
         &mut self,
         req_id: i32,
         pos: i32,
@@ -3766,6 +2780,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn historical_ticks(&mut self, req_id: i32, ticks: Vec<HistoricalTick>, done: bool) {
+        
         info!(
             "historical_ticks -- req_id: {}, ticks: {:?}, done: {}",
             req_id, ticks, done
@@ -3774,6 +2789,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn historical_ticks_bid_ask(
+        
         &mut self,
         req_id: i32,
         ticks: Vec<HistoricalTickBidAsk>,
@@ -3787,6 +2803,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn historical_ticks_last(&mut self, req_id: i32, ticks: Vec<HistoricalTickLast>, done: bool) {
+        
         info!(
             "historical_ticks_last -- req_id: {}, ticks: {:?}, done: {}",
             req_id, ticks, done
@@ -3795,6 +2812,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_by_tick_all_last(
+        
         &mut self,
         req_id: i32,
         tick_type: TickByTickType,
@@ -3814,6 +2832,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_by_tick_bid_ask(
+        
         &mut self,
         req_id: i32,
         time: i64,
@@ -3832,6 +2851,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn tick_by_tick_mid_point(&mut self, req_id: i32, time: i64, mid_point: f64) {
+        
         info!(
             "tick_by_tick_mid_point -- req_id: {}, time: {}, mid_point: {}",
             req_id, time, mid_point
@@ -3840,6 +2860,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn order_bound(&mut self, req_id: i32, api_client_id: i32, api_order_id: i32) {
+        
         info!(
             "order_bound -- req_id: {}, api_client_id: {}, api_order_id: {}",
             req_id, api_client_id, api_order_id
@@ -3848,6 +2869,7 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn completed_order(&mut self, contract: Contract, order: Order, order_state: OrderState) {
+        
         info!(
             "completed_order -- contract: [{}], order: [{}], order_state: [{}]",
             contract, order, order_state
@@ -3856,6 +2878,9 @@ where
 
     //----------------------------------------------------------------------------------------------
     fn completed_orders_end(&mut self) {
+        
         info!("completed_orders_end -- (no parameters for this message)");
     }
 }
+
+

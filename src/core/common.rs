@@ -1,6 +1,7 @@
 //! Common types
 use std::fmt::Display;
 use std::fmt::{self, Error, Formatter};
+use strum_macros::EnumString;
 
 use num_derive::FromPrimitive;
 
@@ -16,7 +17,7 @@ pub const UNSET_LONG: i64 = std::i64::MAX;
 //==================================================================================================
 /// Tick types
 #[repr(i32)]
-#[derive(Serialize, Deserialize, Clone, Debug, FromPrimitive, Copy)]
+#[derive(EnumString, Serialize, Deserialize, Clone, Debug, FromPrimitive, Copy)]
 pub enum TickType {
     BidSize = 0,
     Bid = 1,
