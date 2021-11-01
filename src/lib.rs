@@ -11,9 +11,9 @@
 //! ***start_requests*** method in ***TestWrapper*** which is called by ***next_valid_id***).
 //!
 //! ```no_run        
-//! use twsapi::core::errors::IBKRApiLibError;
-//! use twsapi::core::client::EClient;
-//! use twsapi::core::streamer::{Streamer, TcpStreamer};
+//! use ibtwsapi::core::errors::IBKRApiLibError;
+//! use ibtwsapi::core::client::EClient;
+//! use ibtwsapi::core::streamer::{Streamer, TcpStreamer};
 //! use std::time::Duration;
 //! use std::sync::{Arc, Mutex};
 //! use std::thread;

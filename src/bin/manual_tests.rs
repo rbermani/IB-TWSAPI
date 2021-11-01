@@ -3,8 +3,8 @@
 use log::*;
 use std::thread;
 use std::time::Duration;
-use twsapi::core::errors::*;
-use twsapi::examples::example_wrapper::ExampleWrapper;
+use ibtwsapi::core::errors::*;
+use ibtwsapi::examples::example_wrapper::ExampleWrapper;
 
 /// Example of using client and wrapper.
 /// Requires a running instance of TWS or IB Gateway connected to the port in main.

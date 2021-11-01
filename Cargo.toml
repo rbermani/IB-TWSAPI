@@ -1,17 +1,18 @@
 [package]
-name = "IBKR-API-Rust"
+name = "IB-TWSAPI"
 version = "0.1.0"
-authors = ["brett.miller@sparkstart.com"]
+authors = ["bobbermani@gmail.com", "brett.miller@sparkstart.com"]
 edition = "2018"
+description = "A fork of the IBKR-API-Rust package that uses a simpler interface paradigm"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "twsapi"
+name = "ibtwsapi"
 path = "src/lib.rs"
 
 [[bin]]
-name = "twsapi_client"
+name = "ibtws_client"
 path = "src/bin/manual_tests.rs"
 
 [dependencies]
