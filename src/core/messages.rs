@@ -7,7 +7,6 @@ use std::string::String;
 use std::vec::Vec;
 
 use rust_decimal::Decimal;
-use std::str::FromStr;
 use ascii;
 use ascii::AsAsciiStr;
 
@@ -19,11 +18,12 @@ use crate::core::order::{Order, OrderState, SoftDollarTier};
 use crate::core::common::{
     BarData, CommissionReport, DepthMktDataDescription, FaDataType, FamilyCode, HistogramData, HistoricalTick,
     HistoricalTickBidAsk, HistoricalTickLast, NewsProvider, PriceIncrement, RealTimeBar,
-    SmartComponent, TagValue, TickAttrib, TickAttribBidAsk, TickAttribLast, TickByTickType, TickType, MAX_MSG_LEN,
-    NO_VALID_ID, UNSET_DOUBLE, UNSET_INTEGER,
+    SmartComponent, TickAttrib, TickAttribBidAsk, TickAttribLast, TickByTickType, TickType,
+    UNSET_DOUBLE, UNSET_INTEGER,
 };
 use crate::core::errors::IBKRApiLibError;
 use crate::core::execution::Execution;
+use strum_macros::Display;
 
 //==================================================================================================
 trait EClientMsgSink {
@@ -39,20 +39,20 @@ pub enum FAMessageDataTypes {
     Aliases = 3,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
 pub enum IncomingMsgCmd {
     ErrorMsg { req_id: i32, error_code: i32, error_str: String }, 
-    TickPriceMsg { req_id: i32, tick_type: TickType, price: f64, size: i32, tick_attr: TickAttrib },
-    TickSizeMsg { req_id: i32, size_tick_type: i32, size: i32 },
+    TickPriceMsg { req_id: i32, tick_type: TickType, price: f64, tick_attr: TickAttrib },
+    TickSizeMsg { req_id: i32, tick_type: TickType, size: i32 },
     TickSnapShotEndMsg{ req_id: i32},
-    TickGenericMsg { req_id: i32, tick_type: TickType, value: f64},
+    TickGenericMsg { ticker_id: i32, tick_type: TickType, value: f64},
     TickStringMsg { req_id: i32, tick_type: TickType, value: String },
     TickEFPMsg {
-        req_id: i32,
+        ticker_id: i32,
         tick_type: TickType,
         basis_points: f64,
         formatted_basis_points: String,
-        implied_future: f64,
+        implied_futures_price: f64,
         hold_days: i32,
         future_last_trade_date: String,
         dividend_impact: f64,
@@ -80,7 +80,7 @@ pub enum IncomingMsgCmd {
     OpenOrderEndMsg ,
     ConnectionClosedMsg ,
     UpdateAccountValueMsg  { key: String, val: String, currency: String, account_name: String},
-    UpdatePortfolioMsg  {
+    PortfolioValueMsg  {
         contract: Contract,
         position: f64,
         market_price: f64,
@@ -128,39 +128,28 @@ pub enum IncomingMsgCmd {
     HistoricalDataMsg  { req_id: i32, bar: BarData},
     HistoricalDataEndMsg  { req_id: i32, start: String, end: String},
     ScannerParametersMsg  { xml: String},
+    ScannerDataMsg {req_id: i32, rank: i32, contract_details: ContractDetails, distance: String, benchmark: String, projection: String, legs_str: String },
     ScannerDataEndMsg  { req_id: i32},
     RealtimeBarMsg  { req_id: i32, bar: RealTimeBar},
     CurrentTimeMsg  { time: i64},
     FundamentalDataMsg  { req_id: i32, data: String},
     DeltaNeutralValidationMsg  { req_id: i32, delta_neutral_contract: DeltaNeutralContract},
     CommissionReportMsg  { commission_report: CommissionReport},
-    PositionMsg  { account: String, contract: Contract, position: f64, avg_cost: f64},
+    PositionDataMsg  { account: String, contract: Contract, position: f64, avg_cost: f64},
     PositionEndMsg,
     AccountSummaryMsg  { req_id: i32, account: String, tag: String, value: String, currency: String},
     AccountSummaryEndMsg  { req_id: i32},
     VerifyMessageApiMsg  { api_data: String},
     VerifyCompletedMsg  { is_successful: bool, error_text: String},
-    VerifyAndAuthMessageApiMsg  { api_data: String, xyz_challange: String},
+    VerifyAndAuthMessageApiMsg  { api_data: String, xyz_challenge: String},
     VerifyAndAuthCompletedMsg  { is_successful: bool, error_text: String},
     DisplayGroupListMsg  { req_id: i32, groups: String},
     DisplayGroupUpdatedMsg  { req_id: i32, contract_info: String},
-    PositionMultiMsg  { req_id: i32, account: String, model_code: String, contract: Contract, pos: f64, avg_cost: f64 },
+    PositionMultiMsg  { req_id: i32, account: String, model_code: String, contract: Contract, position: f64, avg_cost: f64 },
     PositionMultiEndMsg  { req_id: i32},
     AccountUpdateMultiMsg  { req_id: i32, account: String, model_code: String, key: String, value: String, currency: String },
     AccountUpdateMultiEndMsg  { req_id: i32},
-    TickOptionComputationMsg  {
-        req_id: i32,
-        tick_type: TickType,
-        implied_vol: f64,
-        delta: f64,
-        opt_price: f64,
-        pv_dividend: f64,
-        gamma: f64,
-        vega: f64,
-        theta: f64,
-        und_price: f64
-    },
-    SecurityDefinitionOptionParameterMsg  {
+    SecurityDefOptionParameterMsg  {
         req_id: i32,
         exchange: String,
         underlying_con_id: i32,
@@ -169,7 +158,7 @@ pub enum IncomingMsgCmd {
         expirations: HashSet<String>,
         strikes: HashSet<Decimal>
     },
-    SecurityDefinitionOptionParameterEndMsg  { req_id: i32},
+    SecurityDefOptionParameterEndMsg  { req_id: i32},
     SoftDollarTiersMsg  { req_id: i32, tiers: Vec<SoftDollarTier>},
     FamilyCodesMsg  { family_codes: Vec<FamilyCode>},
     SymbolSamplesMsg  { req_id: i32, contract_descriptions: Vec<ContractDescription>},
@@ -202,13 +191,13 @@ pub enum IncomingMsgCmd {
     RerouteMarketDataReqMsg  { req_id: i32, con_id: i32, exchange: String},
     RerouteMarketDepthReqMsg  { req_id: i32, con_id: i32, exchange: String},
     MarketRuleMsg  { market_rule_id: i32, price_increments: Vec<PriceIncrement>},
-    PnlMsg  { req_id: i32, daily_pn_l: f64, unrealized_pn_l: f64, realized_pn_l: f64},
+    PnlMsg  { req_id: i32, daily_pnl: f64, unrealized_pnl: f64, realized_pnl: f64},
     PnlSingleMsg  {
         req_id: i32,
         pos: i32,
-        daily_pn_l: f64,
-        unrealized_pn_l: f64,
-        realized_pn_l: f64,
+        daily_pnl: f64,
+        unrealized_pnl: f64,
+        realized_pnl: f64,
         value: f64 },
     HistoricalTicksMsg  { req_id: i32, ticks: Vec<HistoricalTick>, done: bool},
     HistoricalTicksBidAskMsg  {
@@ -234,6 +223,17 @@ pub enum IncomingMsgCmd {
         ask_size: i32,
         tick_attrib_bid_ask: TickAttribBidAsk },
     TickByTickMidPointMsg  { req_id: i32, time: i64, mid_point: f64},
+    TickOptionComputationMsg {
+        ticker_id: i32,
+        tick_type: TickType,
+        implied_vol: f64,
+        delta: f64,
+        opt_price: f64,
+        pv_dividend: f64,
+        gamma: f64,
+        vega: f64,
+        theta: f64,
+        und_price: f64,},
     OrderBoundMsg  { req_id: i32, api_client_id: i32, api_order_id: i32},
     CompletedOrderMsg  { contract: Contract, order: Order, order_state: OrderState},
     CompletedOrdersEndMsg,

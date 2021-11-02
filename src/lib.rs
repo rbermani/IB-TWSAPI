@@ -11,29 +11,51 @@
 //! ***start_requests*** method in ***TestWrapper*** which is called by ***next_valid_id***).
 //!
 //! ```no_run        
-//! use ibtwsapi::core::errors::IBKRApiLibError;
-//! use ibtwsapi::core::client::EClient;
-//! use ibtwsapi::core::streamer::{Streamer, TcpStreamer};
-//! use std::time::Duration;
-//! use std::sync::{Arc, Mutex};
+//! use log::*;
 //! use std::thread;
+//! use std::time::Duration;
+//! use ibtwsapi::core::errors::*;
+//! use ibtwsapi::examples::example_wrapper::ExampleWrapper;
+//! 
+//! /// Example of using client and wrapper.
+//! /// Requires a running instance of TWS or IB Gateway connected to the port in main.
+//! /// Upon connecting, TWS will send the next valid order ID which will cause the wrapper callback method
+//! /// next_valid_id to be called, which will start sending tests requests to TWS (see the
+//! /// start_requests function in ExampleWrapper which is called by next_valid_id
+//! //==================================================================================================
+//!pub fn main() -> Result<(), IBKRApiLibError> {
+//!    match log4rs::init_file("./log_config.yml", Default::default()) {
+//!        Ok(_) => (),
+//!        Err(e) => {
+//!            println!("Error: {}", e.to_string());
+//!            return Err(IBKRApiLibError::ApiError(TwsApiReportableError::new(
+//!                -1,
+//!                "-1".to_string(),
+//!                "Failed to create logger!!".to_string(),
+//!            )))
+//!        }
+//!    };
 //!
-//! fn main() -> Result<(), IBKRApiLibError> {
+//!    let mut app = ExampleWrapper::new();
 //!
-//!     let app = Arc::new(Mutex::new(EClient::new()));
-//!
-//!     println!("getting connection...");
+//!    info!("getting connection...");
 //!
 //!    //use port 7497 for TWS or 4002 for IB Gateway, depending on the port you have set
-//!    app.lock()
-//!       .expect("EClient mutex was poisoned")
-//!       .connect("127.0.0.1", 4002, 0)?;
-//!
-//!    //4002
-//!    thread::sleep(Duration::new(18600, 0));
+//!    app.client.connect("127.0.0.1", 4002, 0)?;
+//!    loop {
+//!        match app.process_event() {
+//!            Ok(_) => continue,
+//!            Err(e) =>
+//!            {
+//!                error!("{}", e.to_string());
+//!                break ();
+//!            },
+//!        };
+//!    }
+//!    thread::sleep(Duration::new(2, 0));
 //!
 //!    Ok(())
-//! }
+//!}
 //! ```     
 pub mod core;
 pub mod examples;

@@ -1,6 +1,6 @@
 //! Error types
 use std::num::{ParseFloatError, ParseIntError};
-use std::sync::mpsc::{RecvError, RecvTimeoutError};
+use std::sync::mpsc::{TryRecvError, RecvError, RecvTimeoutError};
 use std::{error, fmt, io};
 
 const ALREADY_CONNECTED: (i32, &str) = (501, "Already connected.");
@@ -81,6 +81,7 @@ pub enum IBKRApiLibError {
     ParseFloat(ParseFloatError),
     ParseInt(ParseIntError),
     RecvError(RecvError),
+    TryRecvError(TryRecvError),
     RecvTimeoutError(RecvTimeoutError),
     ApiError(TwsApiReportableError),
 }
@@ -94,6 +95,7 @@ impl fmt::Display for IBKRApiLibError {
             IBKRApiLibError::ParseFloat(ref err) => write!(f, "Parse error: {}", err),
             IBKRApiLibError::ParseInt(ref err) => write!(f, "Parse error: {}", err),
             IBKRApiLibError::RecvError(ref err) => write!(f, "Recieve error: {}", err),
+            IBKRApiLibError::TryRecvError(ref err) => write!(f, "TryRecieve error: {}", err),
             IBKRApiLibError::RecvTimeoutError(ref err) => write!(f, "Reader Send error {}", err),
             IBKRApiLibError::ApiError(ref err) => write!(f, "TWS Error: {}", err),
         }
@@ -108,7 +110,8 @@ impl fmt::Debug for IBKRApiLibError {
             IBKRApiLibError::Io(ref err) => write!(f, "IO error: {}", err),
             IBKRApiLibError::ParseFloat(ref err) => write!(f, "Parse error: {}", err),
             IBKRApiLibError::ParseInt(ref err) => write!(f, "Parse error: {}", err),
-            IBKRApiLibError::RecvError(ref err) => write!(f, "Recieve error: {}", err),
+            IBKRApiLibError::RecvError(ref err) => write!(f, "Receive error: {}", err),
+            IBKRApiLibError::TryRecvError(ref err) => write!(f, "TryReceive error {}", err),
             IBKRApiLibError::RecvTimeoutError(ref err) => write!(f, "Reader Send error {}", err),
             IBKRApiLibError::ApiError(ref err) => write!(f, "TWS Error: {}", err),
         }
@@ -126,6 +129,7 @@ impl error::Error for IBKRApiLibError {
             IBKRApiLibError::ParseFloat(ref err) => Some(err),
             IBKRApiLibError::ParseInt(ref err) => Some(err),
             IBKRApiLibError::RecvError(ref err) => Some(err),
+            IBKRApiLibError::TryRecvError(ref err) => Some(err),
             IBKRApiLibError::RecvTimeoutError(ref err) => Some(err),
             IBKRApiLibError::ApiError(ref err) => Some(err),
         }

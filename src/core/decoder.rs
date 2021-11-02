@@ -1,7 +1,6 @@
 //! Receives messages from Reader, decodes messages, and feeds them to Cmd Msg Queue
 use std::collections::HashSet;
 
-use std::marker::Sync;
 use std::ops::Deref;
 use std::slice::Iter;
 use std::str::FromStr;
@@ -23,8 +22,7 @@ use crate::core::common::{
     NO_VALID_ID, UNSET_DOUBLE, UNSET_INTEGER,
 };
 use crate::core::contract::{Contract, ContractDescription, ContractDetails, DeltaNeutralContract};
-//use crate::core::errors::IBKRApiLibError, TwsError};
-use crate::core::errors::IBKRApiLibError;
+use crate::core::errors::{IBKRApiLibError, TwsError};
 use crate::core::execution::Execution;
 use crate::core::messages::{read_fields, IncomingMessageIds, IncomingMsgCmd};
 use crate::core::order::{Order, OrderState, SoftDollarTier};
@@ -306,13 +304,12 @@ impl Decoder
             req_id: req_id,
             tick_type: FromPrimitive::from_i32(tick_type_i32).unwrap(),
             price: price,
-            size: size,
             tick_attr: tick_attrib.clone(),
         };
 
         self.send_queue.send(tick_price.clone()).unwrap();
 
-        if let IncomingMsgCmd::TickPriceMsg{req_id, tick_type, price, size, tick_attr}  = tick_price {
+        if let IncomingMsgCmd::TickPriceMsg{..}  = tick_price {
             // process ver 2 fields
             let size_tick_type = match FromPrimitive::from_i32(tick_type_i32) {
                 Some(TickType::Bid) => TickType::BidSize,
@@ -327,7 +324,7 @@ impl Decoder
             if size_tick_type as i32 != TickType::NotSet as i32 {
                 let tick_size = IncomingMsgCmd::TickSizeMsg {
                     req_id: req_id,
-                    size_tick_type: size_tick_type as i32,
+                    tick_type: size_tick_type,
                     size: size,
                 };
                 self.send_queue.send(tick_size).unwrap();
@@ -1532,17 +1529,12 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let order_id = decode_i32(&mut fields_itr)?;
-//        let market_rule = IncomingMsgCmd::MarketRuleMsg {
-//            market_rule_id: market_rule_id,
-//            price_increments: price_increments,
-//        };
-//
-//        self.send_queue.send(market_rule).unwrap();
-////        self.wrapper
-////            .lock()
-////            .expect(WRAPPER_POISONED_MUTEX)
-////            .next_valid_id(order_id);
+        let next_valid_id = IncomingMsgCmd::NextValidIdMsg {
+            order_id: decode_i32(&mut fields_itr)?,
+        };
+
+        self.send_queue.send(next_valid_id).unwrap();
+
         Ok(())
     }
 
@@ -1571,17 +1563,15 @@ impl Decoder
         );
 
         order_decoder.decode_open(&mut fields_itr)?;
-//        let market_rule = IncomingMsgCmd::MarketRuleMsg {
-//            market_rule_id: market_rule_id,
-//            price_increments: price_increments,
-//        };
-//
-//        self.send_queue.send(market_rule).unwrap();
-//
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .open_order(order.order_id, contract, order, order_state);
+        let open_order_msg = IncomingMsgCmd::OpenOrderMsg {
+            order_id: order.order_id,
+            contract: contract,
+            order: order,
+            order_state: order_state,
+        };
+
+        self.send_queue.send(open_order_msg).unwrap();
+
         Ok(())
     }
 
@@ -1592,20 +1582,14 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let req_id = decode_i32(&mut fields_itr)?;
-        let api_client_id = decode_i32(&mut fields_itr)?;
-        let api_order_id = decode_i32(&mut fields_itr)?;
-        //let market_rule = IncomingMsgCmd::MarketRuleMsg {
-        //    market_rule_id: market_rule_id,
-        //    price_increments: price_increments,
-        //};
+        let order_bound = IncomingMsgCmd::OrderBoundMsg {
+            req_id: decode_i32(&mut fields_itr)?,
+            api_client_id: decode_i32(&mut fields_itr)?,
+            api_order_id: decode_i32(&mut fields_itr)?,
+        };
 
-        //self.send_queue.send(market_rule).unwrap();
+        self.send_queue.send(order_bound).unwrap();
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .order_bound(req_id, api_client_id, api_order_id);
         Ok(())
     }
 
@@ -1651,29 +1635,22 @@ impl Decoder
         if self.server_version >= MIN_SERVER_VER_MARKET_CAP_PRICE {
             mkt_cap_price = decode_f64(&mut fields_itr)?;
         }
-        //let market_rule = IncomingMsgCmd::MarketRuleMsg {
-        //    market_rule_id: market_rule_id,
-        //    price_increments: price_increments,
-        //};
+        let order_status = IncomingMsgCmd::OrderStatusMsg {
+           order_id,
+           status,
+           filled,
+           remaining,
+           avg_fill_price,
+           perm_id,
+           parent_id,
+           last_fill_price,
+           client_id,
+           why_held,
+           mkt_cap_price,
+        };
 
-        //self.send_queue.send(market_rule).unwrap();
+        self.send_queue.send(order_status).unwrap();
 
-//        self.wrapper
-//            .try_lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .order_status(
-//                order_id,
-//                status.as_ref(),
-//                filled,
-//                remaining,
-//                avg_fill_price,
-//                perm_id,
-//                parent_id,
-//                last_fill_price,
-//                client_id,
-//                why_held.as_ref(),
-//                mkt_cap_price,
-//            );
         Ok(())
     }
 
@@ -1696,19 +1673,16 @@ impl Decoder
         if self.server_version >= MIN_SERVER_VER_REALIZED_PNL {
             realized_pnl = decode_f64(&mut fields_itr)?;
         }
-        //let market_rule = IncomingMsgCmd::MarketRuleMsg {
-        //    market_rule_id: market_rule_id,
-        //    price_increments: price_increments,
-        //};
 
-        //self.send_queue.send(market_rule).unwrap();
+        let pnl_msg = IncomingMsgCmd::PnlMsg {
+            req_id,
+            daily_pnl,
+            unrealized_pnl,
+            realized_pnl,
+        };
 
-//        self.wrapper.lock().expect(WRAPPER_POISONED_MUTEX).pnl(
-//            req_id,
-//            daily_pnl,
-//            unrealized_pnl,
-            //realized_pnl,
-        //);
+        self.send_queue.send(pnl_msg).unwrap();
+
         Ok(())
     }
 
@@ -1734,17 +1708,12 @@ impl Decoder
         }
 
         let value = decode_f64(&mut fields_itr)?;
-        //let market_rule = IncomingMsgCmd::MarketRuleMsg {
-        //    market_rule_id: market_rule_id,
-        //    price_increments: price_increments,
-        //};
+        let pnl_single = IncomingMsgCmd::PnlSingleMsg {
+            req_id, pos, daily_pnl, unrealized_pnl, realized_pnl, value,
+        };
 
-        //self.send_queue.send(market_rule).unwrap();
+        self.send_queue.send(pnl_single).unwrap();
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .pnl_single(req_id, pos, daily_pnl, unrealized_pnl, realized_pnl, value);
         Ok(())
     }
 
@@ -1795,26 +1764,20 @@ impl Decoder
         if version == 6 && self.server_version == 39 {
             contract.primary_exchange = decode_string(&mut fields_itr)?;
         }
-        //let market_rule = IncomingMsgCmd::MarketRuleMsg {
-        //    market_rule_id: market_rule_id,
-        //    price_increments: price_increments,
-        //};
 
-        //self.send_queue.send(market_rule).unwrap();
+        let update_portfolio = IncomingMsgCmd::PortfolioValueMsg {
+               contract,
+               position,
+               market_price,
+               market_value,
+               average_cost,
+               unrealized_pnl,
+               realized_pnl,
+               account_name,
+        };
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .update_portfolio(
-//                contract,
-//                position,
-//                market_price,
-//                market_value,
-//                average_cost,
-//                unrealized_pnl,
-//                realized_pnl,
-//                account_name.as_ref(),
-//            );
+        self.send_queue.send(update_portfolio).unwrap();
+
         Ok(())
     }
 
@@ -1857,19 +1820,15 @@ impl Decoder
             avg_cost = decode_f64(&mut fields_itr)?;
         }
 
-        //let market_rule = IncomingMsgCmd::MarketRuleMsg {
-        //    market_rule_id: market_rule_id,
-        //    price_increments: price_increments,
-        //};
+        let position_data = IncomingMsgCmd::PositionDataMsg {
+            account,
+            contract,
+            position,
+            avg_cost,
+        };
 
-        //self.send_queue.send(market_rule).unwrap();
+        self.send_queue.send(position_data).unwrap();
 
-//        self.wrapper.lock().expect(WRAPPER_POISONED_MUTEX).position(
-//            account.as_ref(),
-//            contract,
-//            position,
-            //avg_cost,
-        //);
         Ok(())
     }
 
@@ -1908,17 +1867,16 @@ impl Decoder
         let avg_cost = decode_f64(&mut fields_itr)?;
         let model_code = decode_string(&mut fields_itr)?;
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .position_multi(
-//                req_id,
-//                account.as_ref(),
-//                model_code.as_ref(),
-//                contract,
-//                position,
-//                avg_cost,
-//            );
+        let position_multi = IncomingMsgCmd::PositionMultiMsg {
+            req_id,
+            account,
+            model_code,
+            contract,
+            position,
+            avg_cost,
+        };
+
+        self.send_queue.send(position_multi).unwrap();
 
         Ok(())
     }
@@ -1932,11 +1890,11 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let req_id = decode_i32(&mut fields_itr)?;
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .position_multi_end(req_id);
+        let position_multi_end = IncomingMsgCmd::PositionMultiEndMsg {
+            req_id: decode_i32(&mut fields_itr)?
+        };
+
+        self.send_queue.send(position_multi_end).unwrap();
         Ok(())
     }
 
@@ -1961,10 +1919,12 @@ impl Decoder
         bar.wap = decode_f64(&mut fields_itr)?;
         bar.count = decode_i32(&mut fields_itr)?;
 
-//        //self.wrapper
-//        //    .lock()
-//        //    .expect(WRAPPER_POISONED_MUTEX)
-//        //    .realtime_bar(req_id, bar);
+        let real_time_bars = IncomingMsgCmd::RealtimeBarMsg {
+            req_id,
+            bar: bar,
+        };
+
+        self.send_queue.send(real_time_bars).unwrap();
         Ok(())
     }
 
@@ -1980,10 +1940,12 @@ impl Decoder
         let fa_data_type = decode_i32(&mut fields_itr)?;
         let xml = decode_string(&mut fields_itr)?;
 
-//        //self.wrapper
-//        //    .lock()
-//        //    .expect(WRAPPER_POISONED_MUTEX)
-//        //    .receive_fa(FromPrimitive::from_i32(fa_data_type).unwrap(), xml.as_ref());
+        let receive_fa = IncomingMsgCmd::ReceiveFaMsg {
+            fa_data: FromPrimitive::from_i32(fa_data_type).unwrap(),
+            cxml: xml,
+        };
+
+        self.send_queue.send(receive_fa).unwrap();
         Ok(())
     }
 
@@ -1994,14 +1956,13 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let req_id = decode_i32(&mut fields_itr)?;
-        let con_id = decode_i32(&mut fields_itr)?;
-        let exchange = decode_string(&mut fields_itr)?;
+        let reroute_mkt_data = IncomingMsgCmd::RerouteMarketDataReqMsg {
+            req_id: decode_i32(&mut fields_itr)?,
+            con_id: decode_i32(&mut fields_itr)?,
+            exchange: decode_string(&mut fields_itr)?,
+        };
 
-//        //self.wrapper
-//        //    .lock()
-//        //    .expect(WRAPPER_POISONED_MUTEX)
-//        //    .reroute_mkt_data_req(req_id, con_id, exchange.as_ref());
+        self.send_queue.send(reroute_mkt_data).unwrap();
         Ok(())
     }
 
@@ -2012,14 +1973,13 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let req_id = decode_i32(&mut fields_itr)?;
-        let con_id = decode_i32(&mut fields_itr)?;
-        let exchange = decode_string(&mut fields_itr)?;
+        let reroute_mkt_depth = IncomingMsgCmd::RerouteMarketDepthReqMsg {
+            req_id: decode_i32(&mut fields_itr)?,
+            con_id: decode_i32(&mut fields_itr)?,
+            exchange: decode_string(&mut fields_itr)?,
+        };
 
-//        //self.wrapper
-//        //    .lock()
-//        //    .expect(WRAPPER_POISONED_MUTEX)
-//        //    .reroute_mkt_depth_req(req_id, con_id, exchange.as_ref());
+        self.send_queue.send(reroute_mkt_depth).unwrap();
         Ok(())
     }
 
@@ -2057,24 +2017,24 @@ impl Decoder
             data.benchmark = decode_string(&mut fields_itr)?;
             data.projection = decode_string(&mut fields_itr)?;
             data.legs = decode_string(&mut fields_itr)?;
-//            //self.wrapper
-//            //    .lock()
-//            //    .expect(WRAPPER_POISONED_MUTEX)
-//            //    .scanner_data(
-            //        req_id,
-            //        data.rank,
-            //        data.contract,
-            //        data.distance.as_ref(),
-            //        data.benchmark.as_ref(),
-            //        data.projection.as_ref(),
-            //        data.legs.as_ref(),
-            //    );
+            let scanner_data = IncomingMsgCmd::ScannerDataMsg {
+               req_id,
+               rank: data.rank,
+               contract_details: data.contract,
+               distance: data.distance,
+               benchmark: data.benchmark,
+               projection: data.projection,
+               legs_str: data.legs,
+            };
+
+            self.send_queue.send(scanner_data).unwrap();
         }
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .scanner_data_end(req_id);
+        let scanner_data_end = IncomingMsgCmd::ScannerDataEndMsg {
+           req_id,
+        };
+
+        self.send_queue.send(scanner_data_end).unwrap();
         Ok(())
     }
 
@@ -2088,10 +2048,11 @@ impl Decoder
         fields_itr.next();
 
         let xml = decode_string(&mut fields_itr)?;
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .scanner_parameters(xml.as_ref());
+        let scanner_params = IncomingMsgCmd::ScannerParametersMsg {
+           xml,
+        };
+
+        self.send_queue.send(scanner_params).unwrap();
         Ok(())
     }
 
@@ -2126,19 +2087,17 @@ impl Decoder
             let big_strike = Decimal::from_f64(strike).unwrap();
             strikes.insert(big_strike);
         }
+        let security_def_opt_param = IncomingMsgCmd::SecurityDefOptionParameterMsg {
+            req_id,
+            exchange,
+            underlying_con_id,
+            trading_class,
+            multiplier,
+            expirations,
+            strikes,
+        };
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .security_definition_option_parameter(
-//                req_id,
-//                exchange.as_ref(),
-//                underlying_con_id,
-//                trading_class.as_ref(),
-//                multiplier.as_ref(),
-//                expirations,
-//                strikes,
-//            );
+        self.send_queue.send(security_def_opt_param).unwrap();
         Ok(())
     }
 
@@ -2152,11 +2111,11 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let req_id = decode_i32(&mut fields_itr)?;
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .security_definition_option_parameter_end(req_id);
+        let security_def_opt_param_end = IncomingMsgCmd::SecurityDefOptionParameterEndMsg {
+           req_id: decode_i32(&mut fields_itr)?,
+        };
+
+        self.send_queue.send(security_def_opt_param_end).unwrap();
         Ok(())
     }
 
@@ -2168,7 +2127,6 @@ impl Decoder
         fields_itr.next();
 
         let req_id = decode_i32(&mut fields_itr)?;
-
         let count = decode_i32(&mut fields_itr)?;
 
         let mut smart_components = vec![];
@@ -2179,11 +2137,12 @@ impl Decoder
             smart_component.exchange_letter = decode_string(&mut fields_itr)?;
             smart_components.push(smart_component)
         }
+        let smart_component_msg = IncomingMsgCmd::SmartComponentsMsg {
+           req_id,
+           smart_components,
+        };
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .smart_components(req_id, smart_components);
+        self.send_queue.send(smart_component_msg).unwrap();
         Ok(())
     }
 
@@ -2207,10 +2166,12 @@ impl Decoder
             tiers.push(tier);
         }
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .soft_dollar_tiers(req_id, tiers);
+        let soft_dollar_tiers = IncomingMsgCmd::SoftDollarTiersMsg {
+           req_id,
+           tiers,
+        };
+
+        self.send_queue.send(soft_dollar_tiers).unwrap();
         Ok(())
     }
 
@@ -2241,10 +2202,13 @@ impl Decoder
             }
             contract_descriptions.push(con_desc)
         }
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .symbol_samples(req_id, contract_descriptions);
+
+        let symbol_samples = IncomingMsgCmd::SymbolSamplesMsg {
+           req_id,
+           contract_descriptions,
+        };
+
+        self.send_queue.send(symbol_samples).unwrap();
         Ok(())
     }
 
@@ -2273,19 +2237,19 @@ impl Decoder
                 tick_attrib_last.unreported = mask & 2 != 0;
                 let exchange = decode_string(&mut fields_itr)?;
                 let special_conditions = decode_string(&mut fields_itr)?;
-//                self.wrapper
-//                    .lock()
-//                    .expect(WRAPPER_POISONED_MUTEX)
-//                    .tick_by_tick_all_last(
-//                        req_id,
-//                        FromPrimitive::from_i32(tick_type).unwrap(),
-//                        time,
-//                        price,
-//                        size,
-//                        tick_attrib_last,
-//                        exchange.as_ref(),
-//                        special_conditions.as_ref(),
-//                    );
+
+                let tick_by_tick_all_last = IncomingMsgCmd::TickByTickAllLastMsg {
+                    req_id: req_id,
+                    tick_type: FromPrimitive::from_i32(tick_type).unwrap(),
+                    time,
+                    price,
+                    size,
+                    tick_attrib_last,
+                    exchange,
+                    special_conditions,
+                };
+
+                self.send_queue.send(tick_by_tick_all_last).unwrap();
             }
             3 =>
             // BidAsk
@@ -2298,27 +2262,31 @@ impl Decoder
                 let mut tick_attrib_bid_ask = TickAttribBidAsk::default();
                 tick_attrib_bid_ask.bid_past_low = mask & 1 != 0;
                 tick_attrib_bid_ask.ask_past_high = mask & 2 != 0;
-//                self.wrapper
-//                    .lock()
-//                    .expect(WRAPPER_POISONED_MUTEX)
-//                    .tick_by_tick_bid_ask(
-//                        req_id,
-//                        time,
-//                        bid_price,
-//                        ask_price,
-//                        bid_size,
-//                        ask_size,
-//                        tick_attrib_bid_ask,
-                    //);
+
+                let tick_by_tick_bid_ask = IncomingMsgCmd::TickByTickBidAskMsg {
+                    req_id,
+                    time,
+                    bid_price,
+                    ask_price,
+                    bid_size,
+                    ask_size,
+                    tick_attrib_bid_ask,
+                };
+
+                self.send_queue.send(tick_by_tick_bid_ask).unwrap();
             }
             4 =>
             // MidPoint
             {
                 let mid_point = decode_f64(&mut fields_itr)?;
-//                self.wrapper
-//                    .lock()
-//                    .expect(WRAPPER_POISONED_MUTEX)
-//                    .tick_by_tick_mid_point(req_id, time, mid_point);
+
+                let tick_by_tick_mid_point = IncomingMsgCmd::TickByTickMidPointMsg {
+                    req_id,
+                    time,
+                    mid_point,
+                };
+
+                self.send_queue.send(tick_by_tick_mid_point).unwrap();
             }
             _ => return Ok(()),
         }
@@ -2336,7 +2304,7 @@ impl Decoder
         fields_itr.next();
 
         let ticker_id = decode_i32(&mut fields_itr)?;
-        let tick_type = decode_i32(&mut fields_itr)?;
+        let tick_type = FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap();
         let basis_points = decode_f64(&mut fields_itr)?;
         let formatted_basis_points = decode_string(&mut fields_itr)?;
         let implied_futures_price = decode_f64(&mut fields_itr)?;
@@ -2344,17 +2312,20 @@ impl Decoder
         let future_last_trade_date = decode_string(&mut fields_itr)?;
         let dividend_impact = decode_f64(&mut fields_itr)?;
         let dividends_to_last_trade_date = decode_f64(&mut fields_itr)?;
-//        self.wrapper.lock().expect(WRAPPER_POISONED_MUTEX).tick_efp(
-//            ticker_id,
-//            FromPrimitive::from_i32(tick_type).unwrap(),
-//            basis_points,
-//            formatted_basis_points.as_ref(),
-//            implied_futures_price,
-//            hold_days,
-//            future_last_trade_date.as_ref(),
-//            dividend_impact,
-//            dividends_to_last_trade_date,
-        //);
+
+        let tick_efp = IncomingMsgCmd::TickEFPMsg {
+            ticker_id,
+            tick_type,
+            basis_points,
+            formatted_basis_points,
+            implied_futures_price,
+            hold_days,
+            future_last_trade_date,
+            dividend_impact,
+            dividends_to_last_trade_date,
+        };
+
+        self.send_queue.send(tick_efp).unwrap();
         Ok(())
     }
 
@@ -2368,17 +2339,16 @@ impl Decoder
         fields_itr.next();
 
         let ticker_id = decode_i32(&mut fields_itr)?;
-        let tick_type = decode_i32(&mut fields_itr)?;
+        let tick_type = FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap();
         let value = decode_f64(&mut fields_itr)?;
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .tick_generic(
-//                ticker_id,
-//                FromPrimitive::from_i32(tick_type).unwrap(),
-//                value,
-//            );
+        let tick_generic = IncomingMsgCmd::TickGenericMsg {
+            ticker_id,
+            tick_type,
+            value,
+        };
+
+        self.send_queue.send(tick_generic).unwrap();
         Ok(())
     }
 
@@ -2388,23 +2358,17 @@ impl Decoder
 
         //throw away message_id
         fields_itr.next();
-        let ticker_id = decode_i32(&mut fields_itr)?;
-        let time_stamp = decode_i32(&mut fields_itr)?;
-        let provider_code = decode_string(&mut fields_itr)?;
-        let article_id = decode_string(&mut fields_itr)?;
-        let headline = decode_string(&mut fields_itr)?;
-        let extra_data = decode_string(&mut fields_itr)?;
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .tick_news(
-//                ticker_id,
-//                time_stamp,
-//                provider_code.as_ref(),
-//                article_id.as_ref(),
-//                headline.as_ref(),
-//                extra_data.as_ref(),
-//            );
+
+        let tick_news = IncomingMsgCmd::TickNewsMsg {
+            ticker_id: decode_i32(&mut fields_itr)?,
+            time_stamp: decode_i32(&mut fields_itr)?,
+            provider_code: decode_string(&mut fields_itr)?,
+            article_id: decode_string(&mut fields_itr)?,
+            headline: decode_string(&mut fields_itr)?,
+            extra_data: decode_string(&mut fields_itr)?,
+        };
+
+        self.send_queue.send(tick_news).unwrap();
         Ok(())
     }
 
@@ -2420,7 +2384,7 @@ impl Decoder
 
         let version = decode_i32(&mut fields_itr)?;
         let ticker_id = decode_i32(&mut fields_itr)?;
-        let tick_type = decode_i32(&mut fields_itr)?;
+        let tick_type = FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap();
         let mut implied_vol = decode_f64(&mut fields_itr)?;
         if approx_eq!(f64, implied_vol, -1.0, ulps = 2) {
             // -1 is the "not yet computed" indicator
@@ -2439,8 +2403,7 @@ impl Decoder
         let mut theta = f64::max_value();
         let mut und_price = f64::max_value();
         if version >= 6
-            || tick_type == TickType::ModelOption as i32
-            || tick_type == TickType::DelayedModelOption as i32
+            || matches!(tick_type, TickType::ModelOption | TickType::DelayedModelOption)
         {
             // introduced in version == 5
             opt_price = decode_f64(&mut fields_itr)?;
@@ -2477,21 +2440,20 @@ impl Decoder
             }
         }
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .tick_option_computation(
-//                ticker_id,
-//                FromPrimitive::from_i32(tick_type).unwrap(),
-//                implied_vol,
-//                delta,
-//                opt_price,
-//                pv_dividend,
-//                gamma,
-//                vega,
-//                theta,
-//                und_price,
-//            );
+        let tick_option_computation = IncomingMsgCmd::TickOptionComputationMsg {
+                ticker_id,
+                tick_type,
+                implied_vol,
+                delta,
+                opt_price,
+                pv_dividend,
+                gamma,
+                vega,
+                theta,
+                und_price,
+        };
+
+        self.send_queue.send(tick_option_computation).unwrap();
         Ok(())
     }
 
@@ -2502,19 +2464,14 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let ticker_id = decode_i32(&mut fields_itr)?;
-        let min_tick = decode_f64(&mut fields_itr)?;
-        let bbo_exchange = decode_string(&mut fields_itr)?;
-        let snapshot_permissions = decode_i32(&mut fields_itr)?;
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .tick_req_params(
-//                ticker_id,
-//                min_tick,
-//                bbo_exchange.as_ref(),
-//                snapshot_permissions,
-//            );
+        let tick_req_params = IncomingMsgCmd::TickReqParamsMsg {
+            ticker_id: decode_i32(&mut fields_itr)?,
+            min_tick: decode_f64(&mut fields_itr)?,
+            bbo_exchange: decode_string(&mut fields_itr)?,
+            snapshot_permissions: decode_i32(&mut fields_itr)?,
+        };
+
+        self.send_queue.send(tick_req_params).unwrap();
         Ok(())
     }
 
@@ -2527,14 +2484,13 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let ticker_id = decode_i32(&mut fields_itr)?;
-        let tick_type = decode_i32(&mut fields_itr)?;
-        let size = decode_i32(&mut fields_itr)?;
+        let tick_size = IncomingMsgCmd::TickSizeMsg {
+            req_id: decode_i32(&mut fields_itr)?,
+            tick_type: FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap(),
+            size: decode_i32(&mut fields_itr)?,
+        };
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .tick_size(ticker_id, FromPrimitive::from_i32(tick_type).unwrap(), size);
+        self.send_queue.send(tick_size).unwrap();
         Ok(())
     }
 
@@ -2547,12 +2503,11 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let req_id = decode_i32(&mut fields_itr)?;
+        let tick_snapshot_end = IncomingMsgCmd::TickSnapShotEndMsg {
+            req_id: decode_i32(&mut fields_itr)?,
+        };
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .tick_snapshot_end(req_id);
+        self.send_queue.send(tick_snapshot_end).unwrap();
         Ok(())
     }
 
@@ -2571,10 +2526,12 @@ impl Decoder
         let is_successful = "true" == decode_string(&mut fields_itr)?;
         let error_text = decode_string(&mut fields_itr)?;
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .verify_and_auth_completed(is_successful, error_text.as_ref());
+        let verify_and_auth = IncomingMsgCmd::VerifyAndAuthCompletedMsg {
+            is_successful,
+            error_text,
+        };
+
+        self.send_queue.send(verify_and_auth).unwrap();
         Ok(())
     }
 
@@ -2590,13 +2547,12 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let api_data = decode_string(&mut fields_itr)?;
-        let xyz_challenge = decode_string(&mut fields_itr)?;
+        let verify_and_auth_message = IncomingMsgCmd::VerifyAndAuthMessageApiMsg {
+            api_data: decode_string(&mut fields_itr)?,
+            xyz_challenge: decode_string(&mut fields_itr)?,
+        };
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .verify_and_auth_message_api(api_data.as_ref(), xyz_challenge.as_ref());
+        self.send_queue.send(verify_and_auth_message).unwrap();
         Ok(())
     }
 
@@ -2611,11 +2567,12 @@ impl Decoder
         let _is_successful_str = decode_string(&mut fields_itr)?;
         let is_successful = "true" == decode_string(&mut fields_itr)?;
         let error_text = decode_string(&mut fields_itr)?;
+        let verify_completed = IncomingMsgCmd::VerifyCompletedMsg {
+            is_successful,
+            error_text,
+        };
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .verify_completed(is_successful, error_text.as_ref());
+        self.send_queue.send(verify_completed).unwrap();
         Ok(())
     }
 
@@ -2628,12 +2585,11 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let api_data = decode_string(&mut fields_itr)?;
+        let verify_message_api = IncomingMsgCmd::VerifyMessageApiMsg {
+            api_data: decode_string(&mut fields_itr)?
+        };
 
-//        self.wrapper
-//            .lock()
-//            .expect(WRAPPER_POISONED_MUTEX)
-//            .verify_message_api(api_data.as_ref());
+        self.send_queue.send(verify_message_api).unwrap();
         Ok(())
     }
 
@@ -2666,8 +2622,9 @@ impl Decoder
 
     //----------------------------------------------------------------------------------------------
     pub fn run(&mut self) -> Result<(), IBKRApiLibError> {
-        //This is the function that has the message loop.
+        // This is the function that has the message loop.
         const CONN_STATE_POISONED: &str = "Connection state mutex was poisoned";
+        let connection_closed = IncomingMsgCmd::ConnectionClosedMsg;
         info!("Starting run...");
         // !self.done &&
         loop {
@@ -2676,17 +2633,15 @@ impl Decoder
             match text {
                 Result::Ok(val) => {
                     if val.len() > MAX_MSG_LEN as usize {
-//                        //self.wrapper.lock().expect(WRAPPER_POISONED_MUTEX).error(
-//                        //    NO_VALID_ID,
-//                        //    TwsError::NotConnected.code(),
-//                        //    format!("{}:{}:{}", TwsError::NotConnected.message(), val.len(), val)
-                        //        .as_str(),
-                        //);
+                        let error_msg = IncomingMsgCmd::ErrorMsg {
+                            req_id: NO_VALID_ID,
+                            error_code: TwsError::NotConnected.code(),
+                            error_str: format!("{}:{}:{}", TwsError::NotConnected.message(), val.len(), val).to_string(),
+                        };
+
+                        self.send_queue.send(error_msg).unwrap();
                         error!("Error receiving message.  Disconnected: Message too big");
-//                        //self.wrapper
-//                        //    .lock()
-//                        //    .expect(WRAPPER_POISONED_MUTEX)
-//                        //    .connection_closed();
+                        self.send_queue.send(connection_closed).unwrap();
                         *self.conn_state.lock().expect(CONN_STATE_POISONED) =
                             ConnStatus::DISCONNECTED;
                         error!("Error receiving message.  Invalid size.  Disconnected.");
@@ -2701,10 +2656,7 @@ impl Decoder
                         != ConnStatus::DISCONNECTED as i32
                     {
                         info!("Error receiving message.  Disconnected: {:?}", err);
-//                        //self.wrapper
-//                        //    .lock()
-//                        //    .expect(WRAPPER_POISONED_MUTEX)
-//                        //    .connection_closed();
+                        self.send_queue.send(connection_closed).unwrap();
                         *self.conn_state.lock().expect(CONN_STATE_POISONED) =
                             ConnStatus::DISCONNECTED;
 

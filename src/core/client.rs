@@ -53,7 +53,6 @@ pub struct EClient
     port: u32,
     extra_auth: bool,
     client_id: i32,
-    order_id: i32,
     evt_chan: (Sender<IncomingMsgCmd>, Receiver<IncomingMsgCmd>),
     pub(crate) server_version: i32,
     conn_time: String,
@@ -68,7 +67,6 @@ impl EClient
         EClient {
             stream: None,
             host: "".to_string(),
-            order_id: -1,
             port: 0,
             extra_auth: false,
             client_id: 0,
@@ -186,8 +184,12 @@ impl EClient
         Ok(())
     }
 
-    pub fn get_event(&self) -> Result<IncomingMsgCmd, TryRecvError> {
-        return self.evt_chan.1.try_recv();
+    pub fn get_event(&self) -> Result<Option<IncomingMsgCmd>, IBKRApiLibError> {
+         match self.evt_chan.1.try_recv() {
+             Ok(i) => Ok(Some(i)),
+             Err(TryRecvError::Empty) => Ok(None),
+             Err(TryRecvError::Disconnected) => Err(IBKRApiLibError::TryRecvError(TryRecvError::Disconnected)),
+         }
     }
 
     /// Checks connection status

@@ -22,21 +22,18 @@ use crate::{
                 fill_twap_params, fill_vwap_params,
             },
             messages::IncomingMsgCmd,
-            streamer::Streamer,
         },
         examples::{
             contract_samples, fa_allocation_samples, order_samples, scanner_subscription_samples,
         },
 };
-use rust_decimal::Decimal;
 use chrono;
-use chrono::{DateTime, Utc};
+use chrono::{Utc};
 use log::*;
 use std::borrow::Borrow;
-use std::collections::HashSet;
+use std::string::ToString;
 use std::thread;
-use std::time::{Duration, UNIX_EPOCH};
-use std::sync::mpsc::TryRecvError;
+use std::time::{Duration};
 
 //==================================================================================================
 /// Example implementation of the Wrapper type.  Just logs callback methods
@@ -56,19 +53,54 @@ impl ExampleWrapper {
         }
     }
 
-    fn process_event(&mut self) -> Result<(), TryRecvError> {
+    pub fn process_event(&mut self) -> Result<(), IBKRApiLibError> {
         match self.client.get_event()? {
-            IncomingMsgCmd::ErrorMsg { req_id, error_code, error_str } => self.error(req_id, error_code, &error_str),
-            IncomingMsgCmd::TickPriceMsg { req_id, tick_type, price, size, tick_attr } =>
+            Some(IncomingMsgCmd::NextValidIdMsg  { order_id }) =>
+            {
+                self.next_order_id = order_id;
+                info!("next_valid_id -- order_id: {}", order_id);
+                if self.start_requests().is_err() {
+                    panic!("start_requests failed!");
+                }
+            },
+            Some(IncomingMsgCmd::ErrorMsg { req_id, error_code, error_str }) => self.error(req_id, error_code, &error_str),
+            Some(IncomingMsgCmd::TickPriceMsg { req_id, tick_type, price, tick_attr }) =>
                 info!("tick_size -- req_id: {}, tick_type: {}, price: {}, attrib: {}", req_id, tick_type, price, tick_attr),
-            _ => panic!("Received unknown event! Exiting"),
+            Some(IncomingMsgCmd::TickSizeMsg { req_id, tick_type, size }) =>
+                info!( "tick_size -- req_id: {}, tick_type: {}, size: {}", req_id, tick_type, size),
+            Some(IncomingMsgCmd::CompletedOrderMsg { contract, order, order_state }) =>
+                info!("completed_order -- contract: [{}], order: [{}], order_state: [{}]", contract, order, order_state),
+            Some(IncomingMsgCmd::CompletedOrdersEndMsg)  => info!("completed_orders_end -- (no parameters for this message)"),
+            Some(IncomingMsgCmd::OrderBoundMsg {req_id, api_client_id, api_order_id} ) =>
+                info!( "order_bound -- req_id: {}, api_client_id: {}, api_order_id: {}", req_id, api_client_id, api_order_id),
+            Some(IncomingMsgCmd::MarketDataTypeMsg {req_id, market_data_type}) =>
+                info!("market_data_type -- req_id: {}, market_data_type: {}", req_id, market_data_type),
+            Some(IncomingMsgCmd::ManagedAccountsMsg { accounts_list }) =>
+                info!("managed_accounts -- accounts_list: {}", accounts_list),
+            Some(IncomingMsgCmd::OpenOrderEndMsg) => info!("open_order_end. (no parameters passed)"),
+            Some(IncomingMsgCmd::OpenOrderMsg { order_id, contract, order, order_state }) =>
+                info!("open_order -- order_id: {}\n\n\t     contract: {}\n\t     order: {}\n\t    order_state: {}",
+                    order_id, contract, order, order_state),
+            Some(IncomingMsgCmd::OrderStatusMsg { order_id, status, filled, remaining, avg_fill_price, perm_id, parent_id,
+                    last_fill_price, client_id, why_held, mkt_cap_price}) =>
+                info!("order_status -- order_id: {}, status: {}, filled: {}, remaining: {}, avg_fill_price: {}, \
+                    perm_id: {}, parent_id: {}, last_fill_price: {}, client_id: {}, why_held: {}, mkt_cap_price: {}",
+                    order_id, status, filled, remaining, avg_fill_price, perm_id, parent_id, last_fill_price,
+                    client_id, why_held, mkt_cap_price),
+            Some(IncomingMsgCmd::ExecDetailsMsg { req_id, contract, execution }) =>
+                info!("exec_details -- req_id: {}, contract: {}, execution: {}", req_id, contract, execution),
+            Some(IncomingMsgCmd::ExecDetailsEndMsg { req_id }) => info!("exec_details_end -- req_id: {}", req_id),
+            Some(IncomingMsgCmd::CommissionReportMsg { commission_report }) =>
+                info!("commission_report -- commission_report: {}", commission_report),
+            Some(i) => panic!("Received unhandled event! Exiting. Event: {}", i.to_string()),
+            None => (),
         }
 
         Ok(())
     }
 
     //----------------------------------------------------------------------------------------------
-    pub fn start_requests(&mut self) -> Result<(), IBKRApiLibError> {
+    fn start_requests(&mut self) -> Result<(), IBKRApiLibError> {
         self.order_operations_req()?; //tested ok
                                       //self.what_if_order_operations()?; //tested ok
                                       //self.account_operations_req()?; //tested ok
@@ -151,10 +183,8 @@ impl ExampleWrapper {
         // The parameter is always ignored.
 
         // Requesting all open orders
-        {
-            info!("req_all_open_orders...");
-            self.client.req_all_open_orders()?;
-        }
+        info!("req_all_open_orders...");
+        self.client.req_all_open_orders()?;
 
         // Taking over orders to be submitted via TWS
         info!("req_auto_open_orders...");
@@ -435,7 +465,6 @@ impl ExampleWrapper {
                 &order_samples::volatility("SELL", 1.0, 5.0, 2),
             )?;
 
-
         //Interactive Broker's has a 50 messages per second limit, so sleep for 1 sec and continue placing orders
         thread::sleep(Duration::from_secs(1));
 
@@ -535,7 +564,6 @@ impl ExampleWrapper {
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
     fn condition_samples(&mut self) -> Result<(), IBKRApiLibError> {
-        
         let mut mkt = order_samples::market_order("BUY", 100.0);
         // Order will become active if conditioning criteria is met
         mkt.conditions
@@ -760,7 +788,7 @@ impl ExampleWrapper {
         // // thread::sleep(Duration::from_secs(1));
 
         let base_order = order_samples::limit_order("BUY", 1000.0, 1.0);
-        let mut next_id = self.next_order_id();
+        let next_id = self.next_order_id();
         let order = &mut base_order.clone();
         fill_arrival_price_params(
             order,
@@ -778,7 +806,7 @@ impl ExampleWrapper {
                 order,
             )?;
 
-        // 
+        // let next_id = self.next_order_id();
         // let order = &mut base_order.clone();
         // fill_dark_ice_params(
         //     order,
@@ -1029,7 +1057,7 @@ impl ExampleWrapper {
     fn what_if_order_operations(&mut self) -> Result<(), IBKRApiLibError> {
         let mut what_if_order = order_samples::limit_order("SELL", 5.0, 70.0);
         what_if_order.what_if = true;
-        let mut next_id = self.next_order_id();
+        let next_id = self.next_order_id();
         self.client.place_order(
                 next_id,
                 contract_samples::us_stock_at_smart().borrow(),
@@ -1359,7 +1387,6 @@ impl ExampleWrapper {
     //----------------------------------------------------------------------------------------------
     #[allow(dead_code)]
     fn market_scanners_perations_req(&mut self) -> Result<(), IBKRApiLibError> {
-        
         // Requesting list of valid scanner parameters which can be used in TWS
         self.client.req_scanner_parameters()?;
 
@@ -1391,7 +1418,17 @@ impl ExampleWrapper {
                 scanner_subscription_samples::hot_usstk_by_volume(),
                 vec![],
                 tagvalues,
-            )?; // requires TWS v973 +
+            ); // requires TWS v973 +
+        if result.is_err() {
+            match result.unwrap_err() {
+                IBKRApiLibError::ApiError(err) => self.error(
+                    err.req_id,
+                    err.code.as_str().parse().unwrap(),
+                    err.description.as_ref(),
+                ),
+                _ => {}
+            }
+        }
 
         let aaplcon_idtag = vec![TagValue::new(
             "underConID".to_string(),
@@ -1957,6 +1994,7 @@ impl ExampleWrapper {
         Ok(())
     }
 
+    //----------------------------------------------------------------------------------------------
     fn error(&mut self, req_id: i32, error_code: i32, error_string: &str) {
         
         error!(
@@ -1964,46 +2002,7 @@ impl ExampleWrapper {
             req_id, error_code, error_string
         );
     }
-
-    //----------------------------------------------------------------------------------------------
-    fn win_error(&mut self, text: &str, last_error: i32) {
-        
-        error!("text: {} , last_error:{}", text, last_error);
-    }
-
-    //----------------------------------------------------------------------------------------------
-    fn connect_ack(&mut self) {
-        
-        info!("Connected.");
-    }
-
-    //----------------------------------------------------------------------------------------------
-    fn market_data_type(&mut self, req_id: i32, market_data_type: i32) {
-        
-        info!(
-            "market_data_type -- req_id: {}, market_data_type: {}",
-            req_id, market_data_type
-        );
-    }
-
-    //----------------------------------------------------------------------------------------------
-    fn tick_price(&mut self, req_id: i32, tick_type: TickType, price: f64, attrib: TickAttrib) {
-        
-        info!(
-            "tick_size -- req_id: {}, tick_type: {}, price: {}, attrib: {}",
-            req_id, tick_type, price, attrib
-        );
-    }
-
-    //----------------------------------------------------------------------------------------------
-    fn tick_size(&mut self, req_id: i32, tick_type: TickType, size: i32) {
-        
-        info!(
-            "tick_size -- req_id: {}, tick_type: {}, size: {}",
-            req_id, tick_type, size
-        );
-    }
-
+/*
     //----------------------------------------------------------------------------------------------
     fn tick_snapshot_end(&mut self, req_id: i32) {
         
@@ -2164,16 +2163,6 @@ impl ExampleWrapper {
         info!("account_download_end: {}.", account_name);
     }
 
-    //----------------------------------------------------------------------------------------------
-    fn next_valid_id(&mut self, order_id: i32) {
-        
-        self.next_order_id = order_id;
-        info!("next_valid_id -- order_id: {}", order_id);
-
-        if self.start_requests().is_err() {
-            panic!("start_requests failed!");
-        }
-    }
 
     //----------------------------------------------------------------------------------------------
     fn contract_details(&mut self, req_id: i32, contract_details: ContractDetails) {
@@ -2857,30 +2846,7 @@ impl ExampleWrapper {
             req_id, time, mid_point
         );
     }
-
-    //----------------------------------------------------------------------------------------------
-    fn order_bound(&mut self, req_id: i32, api_client_id: i32, api_order_id: i32) {
-        
-        info!(
-            "order_bound -- req_id: {}, api_client_id: {}, api_order_id: {}",
-            req_id, api_client_id, api_order_id
-        );
-    }
-
-    //----------------------------------------------------------------------------------------------
-    fn completed_order(&mut self, contract: Contract, order: Order, order_state: OrderState) {
-        
-        info!(
-            "completed_order -- contract: [{}], order: [{}], order_state: [{}]",
-            contract, order, order_state
-        );
-    }
-
-    //----------------------------------------------------------------------------------------------
-    fn completed_orders_end(&mut self) {
-        
-        info!("completed_orders_end -- (no parameters for this message)");
-    }
+*/
 }
 
 
