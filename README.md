@@ -14,7 +14,7 @@ This project began as a fork of the IBKR-API-Rust package, written by Brett Mill
 - Migrated to using the rust_decimal package instead of BigDecimal
 
 ## Instructions
-- Copy the test_wrapper.rs to your project, rename, and re-implement functionality as needed.
+- Copy the example_wrapper.rs to your project, rename, and re-implement functionality as needed.
 - Write application using your own implementation.
 
 ## Original package description
