@@ -1,5 +1,5 @@
 [package]
-name = "IB-TWSAPI"
+name = "ibtwsapi"
 version = "0.1.0"
 authors = ["bobbermani@gmail.com", "brett.miller@sparkstart.com"]
 edition = "2018"
