@@ -1,10 +1,10 @@
 //! Binary for manually testing crate
 
+use ibtwsapi::core::errors::*;
+use ibtwsapi::examples::example_wrapper::ExampleWrapper;
 use log::*;
 use std::thread;
 use std::time::Duration;
-use ibtwsapi::core::errors::*;
-use ibtwsapi::examples::example_wrapper::ExampleWrapper;
 
 /// Example of using client and wrapper.
 /// Requires a running instance of TWS or IB Gateway connected to the port in main.
@@ -21,7 +21,7 @@ pub fn main() -> Result<(), IBKRApiLibError> {
                 -1,
                 "-1".to_string(),
                 "Failed to create logger!!".to_string(),
-            )))
+            )));
         }
     };
 
@@ -34,11 +34,10 @@ pub fn main() -> Result<(), IBKRApiLibError> {
     loop {
         match app.process_event() {
             Ok(_) => continue,
-            Err(e) =>
-            {
+            Err(e) => {
                 error!("{}", e.to_string());
                 break ();
-            },
+            }
         };
     }
     thread::sleep(Duration::new(2, 0));

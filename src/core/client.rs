@@ -23,7 +23,7 @@ use crate::core::errors::{IBKRApiLibError, TwsApiReportableError, TwsError};
 use crate::core::execution::ExecutionFilter;
 use crate::core::messages::make_field;
 use crate::core::messages::{make_field_handle_empty, read_msg};
-use crate::core::messages::{make_message, read_fields, OutgoingMessageIds,IncomingMsgCmd};
+use crate::core::messages::{make_message, read_fields, OutgoingMessageIds, ServerRspMsg};
 use crate::core::order::Order;
 use crate::core::order_condition::Condition;
 use crate::core::reader::Reader;
@@ -46,14 +46,13 @@ pub enum ConnStatus {
 //==================================================================================================
 /// Struct for sending requests
 //#[derive(Debug)]
-pub struct EClient
-{
+pub struct EClient {
     pub(crate) stream: Option<Box<dyn Streamer>>,
     host: String,
     port: u32,
     extra_auth: bool,
     client_id: i32,
-    evt_chan: (Sender<IncomingMsgCmd>, Receiver<IncomingMsgCmd>),
+    evt_chan: (Sender<ServerRspMsg>, Receiver<ServerRspMsg>),
     pub(crate) server_version: i32,
     conn_time: String,
     pub conn_state: Arc<Mutex<ConnStatus>>,
@@ -61,8 +60,7 @@ pub struct EClient
     disconnect_requested: Arc<AtomicBool>,
 }
 
-impl EClient
-{
+impl EClient {
     pub fn new() -> Self {
         EClient {
             stream: None,
@@ -184,12 +182,14 @@ impl EClient
         Ok(())
     }
 
-    pub fn get_event(&self) -> Result<Option<IncomingMsgCmd>, IBKRApiLibError> {
-         match self.evt_chan.1.try_recv() {
-             Ok(i) => Ok(Some(i)),
-             Err(TryRecvError::Empty) => Ok(None),
-             Err(TryRecvError::Disconnected) => Err(IBKRApiLibError::TryRecvError(TryRecvError::Disconnected)),
-         }
+    pub fn get_event(&self) -> Result<Option<ServerRspMsg>, IBKRApiLibError> {
+        match self.evt_chan.1.try_recv() {
+            Ok(i) => Ok(Some(i)),
+            Err(TryRecvError::Empty) => Ok(None),
+            Err(TryRecvError::Disconnected) => {
+                Err(IBKRApiLibError::TryRecvError(TryRecvError::Disconnected))
+            }
+        }
     }
 
     /// Checks connection status

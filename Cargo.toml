@@ -32,5 +32,5 @@ rust_decimal = { version = "1.17", features = ["serde-str"] }
 rust_decimal_macros = "1.17"
 float-cmp = "0.8.0"
 chrono = "0.4.11"
-strum = "0.22"
-strum_macros = "0.22"
+strum = "0.23"
+strum_macros = "0.23"

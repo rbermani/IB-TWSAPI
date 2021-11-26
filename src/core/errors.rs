@@ -1,6 +1,6 @@
 //! Error types
 use std::num::{ParseFloatError, ParseIntError};
-use std::sync::mpsc::{TryRecvError, RecvError, RecvTimeoutError};
+use std::sync::mpsc::{RecvError, RecvTimeoutError, TryRecvError};
 use std::{error, fmt, io};
 
 const ALREADY_CONNECTED: (i32, &str) = (501, "Already connected.");

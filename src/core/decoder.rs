@@ -1,30 +1,30 @@
-//! Receives messages from Reader, decodes messages, and feeds them to Cmd Msg Queue
+//! Receives messages from Reader, decodes messages, and feeds them to Cmd  Queue
 use std::collections::HashSet;
 
 use std::ops::Deref;
 use std::slice::Iter;
 use std::str::FromStr;
 use std::string::ToString;
-use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use rust_decimal::Decimal;
 use float_cmp::*;
 use log::*;
 use num_traits::float::FloatCore;
 use num_traits::FromPrimitive;
+use rust_decimal::Decimal;
 
 use crate::core::client::ConnStatus;
 use crate::core::common::{
     BarData, CommissionReport, DepthMktDataDescription, FamilyCode, HistogramData, HistoricalTick,
     HistoricalTickBidAsk, HistoricalTickLast, NewsProvider, PriceIncrement, RealTimeBar,
-    SmartComponent, TagValue, TickAttrib, TickAttribBidAsk, TickAttribLast, TickType, MAX_MSG_LEN,
-    NO_VALID_ID, UNSET_DOUBLE, UNSET_INTEGER,
+    SmartComponent, TagValue, TickAttrib, TickAttribBidAsk, TickAttribLast, TickMsgType, TickType,
+    MAX_MSG_LEN, NO_VALID_ID, UNSET_DOUBLE, UNSET_INTEGER,
 };
 use crate::core::contract::{Contract, ContractDescription, ContractDetails, DeltaNeutralContract};
 use crate::core::errors::{IBKRApiLibError, TwsError};
 use crate::core::execution::Execution;
-use crate::core::messages::{read_fields, IncomingMessageIds, IncomingMsgCmd};
+use crate::core::messages::{read_fields, ServerRspMsg, ServerRspMsgDiscriminants};
 use crate::core::order::{Order, OrderState, SoftDollarTier};
 use crate::core::order_decoder::OrderDecoder;
 use crate::core::scanner::ScanData;
@@ -106,16 +106,15 @@ pub fn decode_bool(iter: &mut Iter<String>) -> Result<bool, IBKRApiLibError> {
 //==================================================================================================
 pub struct Decoder {
     msg_queue: Receiver<String>,
-    send_queue: Sender<IncomingMsgCmd>,
+    send_queue: Sender<ServerRspMsg>,
     pub server_version: i32,
     conn_state: Arc<Mutex<ConnStatus>>,
 }
 
-impl Decoder
-{
+impl Decoder {
     pub fn new(
         msg_queue: Receiver<String>,
-        send_queue: Sender<IncomingMsgCmd>,
+        send_queue: Sender<ServerRspMsg>,
         server_version: i32,
         conn_state: Arc<Mutex<ConnStatus>>,
     ) -> Self {
@@ -136,135 +135,193 @@ impl Decoder
         let msg_id = i32::from_str(fields.get(0).unwrap().as_str())?;
 
         match FromPrimitive::from_i32(msg_id) {
-            Some(IncomingMessageIds::TickPrice) => self.process_tick_price(fields)?,
-            Some(IncomingMessageIds::AccountSummary) => self.process_account_summary(fields)?,
-            Some(IncomingMessageIds::AccountSummaryEnd) => {
+            Some(ServerRspMsgDiscriminants::TickPrice) => self.process_tick_price(fields)?,
+            Some(ServerRspMsgDiscriminants::AccountSummary) => {
+                self.process_account_summary(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::AccountSummaryEnd) => {
                 self.process_account_summary_end(fields)?
             }
-            Some(IncomingMessageIds::AccountUpdateMulti) => {
+            Some(ServerRspMsgDiscriminants::AccountUpdateMulti) => {
                 self.process_account_update_multi(fields)?
             }
-            Some(IncomingMessageIds::AccountUpdateMultiEnd) => {
+            Some(ServerRspMsgDiscriminants::AccountUpdateMultiEnd) => {
                 self.process_account_update_multi_end(fields)?
             }
-            Some(IncomingMessageIds::AcctDownloadEnd) => {
+            Some(ServerRspMsgDiscriminants::AcctDownloadEnd) => {
                 self.process_account_download_end(fields)?
             }
-            Some(IncomingMessageIds::AcctUpdateTime) => self.process_account_update_time(fields)?,
-            Some(IncomingMessageIds::AcctValue) => self.process_account_value(fields)?,
-            Some(IncomingMessageIds::BondContractData) => {
+            Some(ServerRspMsgDiscriminants::AcctUpdateTime) => {
+                self.process_account_update_time(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::AcctValue) => self.process_account_value(fields)?,
+            Some(ServerRspMsgDiscriminants::BondContractData) => {
                 self.process_bond_contract_data(fields)?
             }
-            Some(IncomingMessageIds::CommissionReport) => self.process_commission_report(fields)?,
-            Some(IncomingMessageIds::CompletedOrder) => self.process_completed_order(fields)?,
-            Some(IncomingMessageIds::CompletedOrdersEnd) => self.process_end_msg_noarg(IncomingMsgCmd::CompletedOrdersEndMsg)?,
-            Some(IncomingMessageIds::ContractData) => self.process_contract_details(fields)?,
-            Some(IncomingMessageIds::ContractDataEnd) => {
+            Some(ServerRspMsgDiscriminants::CommissionReport) => {
+                self.process_commission_report(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::CompletedOrder) => {
+                self.process_completed_order(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::CompletedOrdersEnd) => {
+                self.process_end_msg_noarg(ServerRspMsg::CompletedOrdersEnd)?
+            }
+            Some(ServerRspMsgDiscriminants::ContractData) => {
+                self.process_contract_details(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::ContractDataEnd) => {
                 self.process_contract_details_end(fields)?
             }
-            Some(IncomingMessageIds::CurrentTime) => self.process_current_time(fields)?,
-            Some(IncomingMessageIds::DeltaNeutralValidation) => {
+            Some(ServerRspMsgDiscriminants::CurrentTime) => self.process_current_time(fields)?,
+            Some(ServerRspMsgDiscriminants::DeltaNeutralValidation) => {
                 self.process_delta_neutral_validation(fields)?
             }
-            Some(IncomingMessageIds::DisplayGroupList) => {
+            Some(ServerRspMsgDiscriminants::DisplayGroupList) => {
                 self.process_display_group_list(fields)?
             }
-            Some(IncomingMessageIds::DisplayGroupUpdated) => {
+            Some(ServerRspMsgDiscriminants::DisplayGroupUpdated) => {
                 self.process_display_group_updated(fields)?
             }
-            Some(IncomingMessageIds::ErrMsg) => self.process_error_message(fields)?,
-            Some(IncomingMessageIds::ExecutionData) => self.process_execution_data(fields)?,
-            Some(IncomingMessageIds::ExecutionDataEnd) => {
+            Some(ServerRspMsgDiscriminants::ErrMsg) => self.process_error_message(fields)?,
+            Some(ServerRspMsgDiscriminants::ExecutionData) => {
+                self.process_execution_data(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::ExecutionDataEnd) => {
                 self.process_execution_data_end(fields)?
             }
-            Some(IncomingMessageIds::FamilyCodes) => self.process_family_codes(fields)?,
-            Some(IncomingMessageIds::FundamentalData) => self.process_fundamental_data(fields)?,
-            Some(IncomingMessageIds::HeadTimestamp) => self.process_head_timestamp(fields)?,
-            Some(IncomingMessageIds::HistogramData) => self.process_histogram_data(fields)?,
-            Some(IncomingMessageIds::HistoricalData) => self.process_historical_data(fields)?,
-            Some(IncomingMessageIds::HistoricalDataUpdate) => {
+            Some(ServerRspMsgDiscriminants::FamilyCodes) => self.process_family_codes(fields)?,
+            Some(ServerRspMsgDiscriminants::FundamentalData) => {
+                self.process_fundamental_data(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::HeadTimestamp) => {
+                self.process_head_timestamp(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::HistogramData) => {
+                self.process_histogram_data(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::HistoricalData) => {
+                self.process_historical_data(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::HistoricalDataUpdate) => {
                 self.process_historical_data_update(fields)?
             }
-            Some(IncomingMessageIds::HistoricalNews) => self.process_historical_news(fields)?,
-            Some(IncomingMessageIds::HistoricalNewsEnd) => {
+            Some(ServerRspMsgDiscriminants::HistoricalNews) => {
+                self.process_historical_news(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::HistoricalNewsEnd) => {
                 self.process_historical_news_end(fields)?
             }
-            Some(IncomingMessageIds::HistoricalTicks) => self.process_historical_ticks(fields)?,
-            Some(IncomingMessageIds::HistoricalTicksBidAsk) => {
+            Some(ServerRspMsgDiscriminants::HistoricalTicks) => {
+                self.process_historical_ticks(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::HistoricalTicksBidAsk) => {
                 self.process_historical_ticks_bid_ask(fields)?
             }
 
-            Some(IncomingMessageIds::HistoricalTicksLast) => {
+            Some(ServerRspMsgDiscriminants::HistoricalTicksLast) => {
                 self.process_historical_ticks_last(fields)?
             }
-            Some(IncomingMessageIds::ManagedAccts) => self.process_managed_accounts(fields)?,
-            Some(IncomingMessageIds::MarketDataType) => self.process_market_data_type(fields)?,
-            Some(IncomingMessageIds::MarketDepth) => self.process_market_depth(fields)?,
-            Some(IncomingMessageIds::MarketDepthL2) => self.process_market_depth_l2(fields)?,
-            Some(IncomingMessageIds::MarketRule) => self.process_market_rule(fields)?,
-            Some(IncomingMessageIds::MktDepthExchanges) => {
+            Some(ServerRspMsgDiscriminants::ManagedAccts) => {
+                self.process_managed_accounts(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::MarketDataType) => {
+                self.process_market_data_type(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::MarketDepth) => self.process_market_depth(fields)?,
+            Some(ServerRspMsgDiscriminants::MarketDepthL2) => {
+                self.process_market_depth_l2(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::MarketRule) => self.process_market_rule(fields)?,
+            Some(ServerRspMsgDiscriminants::MktDepthExchanges) => {
                 self.process_market_depth_exchanges(fields)?
             }
-            Some(IncomingMessageIds::NewsArticle) => self.process_news_article(fields)?,
-            Some(IncomingMessageIds::NewsBulletins) => self.process_news_bulletins(fields)?,
-            Some(IncomingMessageIds::NewsProviders) => self.process_news_providers(fields)?,
-            Some(IncomingMessageIds::NextValidId) => self.process_next_valid_id(fields)?,
-            Some(IncomingMessageIds::OpenOrder) => self.process_open_order(fields)?,
-            Some(IncomingMessageIds::OpenOrderEnd) => self.process_end_msg_noarg(IncomingMsgCmd::OpenOrderEndMsg)?,
-            Some(IncomingMessageIds::OrderStatus) => self.process_order_status(fields)?,
-            Some(IncomingMessageIds::OrderBound) => self.process_order_bound(fields)?,
-            Some(IncomingMessageIds::Pnl) => self.process_pnl(fields)?,
-            Some(IncomingMessageIds::PnlSingle) => self.process_pnl_single(fields)?,
-            Some(IncomingMessageIds::PortfolioValue) => self.process_portfolio_value(fields)?,
-            Some(IncomingMessageIds::PositionData) => self.process_position_data(fields)?,
-            Some(IncomingMessageIds::PositionEnd) => self.process_end_msg_noarg(IncomingMsgCmd::PositionEndMsg)?,
-            Some(IncomingMessageIds::RealTimeBars) => self.process_real_time_bars(fields)?,
-            Some(IncomingMessageIds::ReceiveFa) => self.process_receive_fa(fields)?,
-            Some(IncomingMessageIds::RerouteMktDataReq) => {
+            Some(ServerRspMsgDiscriminants::NewsArticle) => self.process_news_article(fields)?,
+            Some(ServerRspMsgDiscriminants::NewsBulletins) => {
+                self.process_news_bulletins(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::NewsProviders) => {
+                self.process_news_providers(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::NextValidId) => self.process_next_valid_id(fields)?,
+            Some(ServerRspMsgDiscriminants::OpenOrder) => self.process_open_order(fields)?,
+            Some(ServerRspMsgDiscriminants::OpenOrderEnd) => {
+                self.process_end_msg_noarg(ServerRspMsg::OpenOrderEnd)?
+            }
+            Some(ServerRspMsgDiscriminants::OrderStatus) => self.process_order_status(fields)?,
+            Some(ServerRspMsgDiscriminants::OrderBound) => self.process_order_bound(fields)?,
+            Some(ServerRspMsgDiscriminants::Pnl) => self.process_pnl(fields)?,
+            Some(ServerRspMsgDiscriminants::PnlSingle) => self.process_pnl_single(fields)?,
+            Some(ServerRspMsgDiscriminants::PortfolioValue) => {
+                self.process_portfolio_value(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::PositionData) => self.process_position_data(fields)?,
+            Some(ServerRspMsgDiscriminants::PositionEnd) => {
+                self.process_end_msg_noarg(ServerRspMsg::PositionEnd)?
+            }
+            Some(ServerRspMsgDiscriminants::RealTimeBars) => self.process_real_time_bars(fields)?,
+            Some(ServerRspMsgDiscriminants::ReceiveFa) => self.process_receive_fa(fields)?,
+            Some(ServerRspMsgDiscriminants::RerouteMktDataReq) => {
                 self.process_reroute_mkt_data_req(fields)?
             }
 
-            Some(IncomingMessageIds::PositionMulti) => self.process_position_multi(fields)?,
-            Some(IncomingMessageIds::PositionMultiEnd) => {
+            Some(ServerRspMsgDiscriminants::PositionMulti) => {
+                self.process_position_multi(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::PositionMultiEnd) => {
                 self.process_position_multi_end(fields)?
             }
-            Some(IncomingMessageIds::ScannerData) => self.process_scanner_data(fields)?,
-            Some(IncomingMessageIds::ScannerParameters) => {
+            Some(ServerRspMsgDiscriminants::ScannerData) => self.process_scanner_data(fields)?,
+            Some(ServerRspMsgDiscriminants::ScannerParameters) => {
                 self.process_scanner_parameters(fields)?
             }
-            Some(IncomingMessageIds::SecurityDefinitionOptionParameter) => {
+            Some(ServerRspMsgDiscriminants::SecurityDefinitionOptionParameter) => {
                 self.process_security_definition_option_parameter(fields)?
             }
-            Some(IncomingMessageIds::SecurityDefinitionOptionParameterEnd) => {
+            Some(ServerRspMsgDiscriminants::SecurityDefinitionOptionParameterEnd) => {
                 self.process_security_definition_option_parameter_end(fields)?
             }
 
-            Some(IncomingMessageIds::SmartComponents) => self.process_smart_components(fields)?,
-            Some(IncomingMessageIds::SoftDollarTiers) => self.process_soft_dollar_tiers(fields)?,
-            Some(IncomingMessageIds::SymbolSamples) => self.process_symbol_samples(fields)?,
-            Some(IncomingMessageIds::TickByTick) => self.process_tick_by_tick(fields)?,
-            Some(IncomingMessageIds::TickEfp) => self.process_tick_by_tick(fields)?,
-            Some(IncomingMessageIds::TickGeneric) => self.process_tick_generic(fields)?,
-            Some(IncomingMessageIds::TickNews) => self.process_tick_news(fields)?,
-            Some(IncomingMessageIds::TickOptionComputation) => {
+            Some(ServerRspMsgDiscriminants::SmartComponents) => {
+                self.process_smart_components(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::SoftDollarTiers) => {
+                self.process_soft_dollar_tiers(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::SymbolSamples) => {
+                self.process_symbol_samples(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::TickByTick) => self.process_tick_by_tick(fields)?,
+            Some(ServerRspMsgDiscriminants::TickEfp) => self.process_tick_by_tick(fields)?,
+            Some(ServerRspMsgDiscriminants::TickGeneric) => self.process_tick_generic(fields)?,
+            Some(ServerRspMsgDiscriminants::TickNews) => self.process_tick_news(fields)?,
+            Some(ServerRspMsgDiscriminants::TickOptionComputation) => {
                 self.process_tick_option_computation(fields)?
             }
-            Some(IncomingMessageIds::TickReqParams) => self.process_tick_req_params(fields)?,
-            Some(IncomingMessageIds::TickSize) => self.process_tick_size(fields)?,
-            Some(IncomingMessageIds::TickSnapshotEnd) => self.process_tick_snapshot_end(fields)?,
-            Some(IncomingMessageIds::TickString) => self.process_tick_string(fields)?,
-            Some(IncomingMessageIds::VerifyAndAuthCompleted) => {
+            Some(ServerRspMsgDiscriminants::TickReqParams) => {
+                self.process_tick_req_params(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::TickSize) => self.process_tick_size(fields)?,
+            Some(ServerRspMsgDiscriminants::TickSnapshotEnd) => {
+                self.process_tick_snapshot_end(fields)?
+            }
+            Some(ServerRspMsgDiscriminants::TickString) => self.process_tick_string(fields)?,
+            Some(ServerRspMsgDiscriminants::VerifyAndAuthCompleted) => {
                 self.process_verify_and_auth_completed(fields)?
             }
 
-            Some(IncomingMessageIds::VerifyCompleted) => self.process_verify_completed(fields)?,
+            Some(ServerRspMsgDiscriminants::VerifyCompleted) => {
+                self.process_verify_completed(fields)?
+            }
 
-            Some(IncomingMessageIds::VerifyMessageApi) => self.process_verify_completed(fields)?,
+            Some(ServerRspMsgDiscriminants::VerifyMessageApi) => {
+                self.process_verify_completed(fields)?
+            }
 
-            Some(IncomingMessageIds::VerifyAndAuthMessageApi) => {
+            Some(ServerRspMsgDiscriminants::VerifyAndAuthMessageApi) => {
                 self.process_verify_and_auth_message_api(fields)?
             }
-            Some(IncomingMessageIds::RerouteMktDepthReq) => {
+            Some(ServerRspMsgDiscriminants::RerouteMktDepthReq) => {
                 self.process_reroute_mkt_depth_req(fields)?
             }
 
@@ -286,9 +343,9 @@ impl Decoder
         let tick_type_i32: i32 = decode_i32(&mut fields_itr)?;
         let price: f64 = decode_f64(&mut fields_itr)?;
         let size: i32 = decode_i32(&mut fields_itr)?;
-        let attr: i32  = decode_i32(&mut fields_itr)?;
+        let attr: i32 = decode_i32(&mut fields_itr)?;
 
-        let mut tick_attrib = TickAttrib::new(false,false,false);
+        let mut tick_attrib = TickAttrib::new(false, false, false);
 
         tick_attrib.can_auto_execute = attr == 1;
 
@@ -300,7 +357,7 @@ impl Decoder
             tick_attrib.pre_open = attr & 4 != 0;
         }
 
-        let tick_price = IncomingMsgCmd::TickPriceMsg {
+        let tick_price = ServerRspMsg::TickPrice {
             req_id: req_id,
             tick_type: FromPrimitive::from_i32(tick_type_i32).unwrap(),
             price: price,
@@ -309,7 +366,7 @@ impl Decoder
 
         self.send_queue.send(tick_price.clone()).unwrap();
 
-        if let IncomingMsgCmd::TickPriceMsg{..}  = tick_price {
+        if let ServerRspMsg::TickPrice { .. } = tick_price {
             // process ver 2 fields
             let size_tick_type = match FromPrimitive::from_i32(tick_type_i32) {
                 Some(TickType::Bid) => TickType::BidSize,
@@ -322,7 +379,7 @@ impl Decoder
             };
 
             if size_tick_type as i32 != TickType::NotSet as i32 {
-                let tick_size = IncomingMsgCmd::TickSizeMsg {
+                let tick_size = ServerRspMsg::TickSize {
                     req_id: req_id,
                     tick_type: size_tick_type,
                     size: size,
@@ -343,7 +400,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let tick_string = IncomingMsgCmd::TickStringMsg {
+        let tick_string = ServerRspMsg::TickString {
             req_id: decode_i32(&mut fields_itr)?,
             tick_type: decode_tick_type(&mut fields_itr)?,
             value: decode_string(&mut fields_itr)?,
@@ -363,7 +420,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let account_summary = IncomingMsgCmd::AccountSummaryMsg {
+        let account_summary = ServerRspMsg::AccountSummary {
             req_id: decode_i32(&mut fields_itr)?,
             account: decode_string(&mut fields_itr)?,
             tag: decode_string(&mut fields_itr)?,
@@ -385,7 +442,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let account_summary_end = IncomingMsgCmd::AccountSummaryEndMsg {
+        let account_summary_end = ServerRspMsg::AccountSummaryEnd {
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -403,7 +460,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let account_update_multi = IncomingMsgCmd::AccountUpdateMultiMsg {
+        let account_update_multi = ServerRspMsg::AccountUpdateMulti {
             req_id: decode_i32(&mut fields_itr)?,
             account: decode_string(&mut fields_itr)?,
             model_code: decode_string(&mut fields_itr)?,
@@ -429,8 +486,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-
-        let account_update_multi_end = IncomingMsgCmd::AccountUpdateMultiEndMsg {
+        let account_update_multi_end = ServerRspMsg::AccountUpdateMultiEnd {
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -448,7 +504,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let account_download_end = IncomingMsgCmd::AccountDownloadEndMsg {
+        let account_download_end = ServerRspMsg::AcctDownloadEnd {
             account_name: decode_string(&mut fields_itr)?,
         };
 
@@ -466,7 +522,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let update_account_time = IncomingMsgCmd::UpdateAccountTimeMsg {
+        let update_account_time = ServerRspMsg::AcctUpdateTime {
             time_stamp: decode_string(&mut fields_itr)?,
         };
 
@@ -484,7 +540,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let update_account_value = IncomingMsgCmd::UpdateAccountValueMsg {
+        let update_account_value = ServerRspMsg::AcctValue {
             key: decode_string(&mut fields_itr)?,
             val: decode_string(&mut fields_itr)?,
             currency: decode_string(&mut fields_itr)?,
@@ -568,7 +624,7 @@ impl Decoder
             contract.market_rule_ids = decode_string(&mut fields_itr)?;
         }
 
-        let bond_contract_details = IncomingMsgCmd::BondContractDetailsMsg {
+        let bond_contract_details = ServerRspMsg::BondContractData {
             req_id: req_id,
             contract_details: contract.clone(),
         };
@@ -594,7 +650,7 @@ impl Decoder
         commission_report.yield_ = decode_f64(&mut fields_itr)?;
         commission_report.yield_redemption_date = decode_string(&mut fields_itr)?;
 
-        let commission_report = IncomingMsgCmd::CommissionReportMsg {
+        let commission_report = ServerRspMsg::CommissionReport {
             commission_report: commission_report.clone(),
         };
 
@@ -624,7 +680,7 @@ impl Decoder
 
         order_decoder.decode_completed(&mut fields_itr)?;
 
-        let completed_order = IncomingMsgCmd::CompletedOrderMsg {
+        let completed_order = ServerRspMsg::CompletedOrder {
             contract: contract.clone(),
             order: order.clone(),
             order_state: order_state.clone(),
@@ -720,7 +776,7 @@ impl Decoder
             contract.real_expiration_date = decode_string(&mut fields_itr)?;
         }
 
-        let contract_details = IncomingMsgCmd::ContractDetailsMsg {
+        let contract_details = ServerRspMsg::ContractData {
             req_id: req_id,
             contract_details: contract.clone(),
         };
@@ -739,7 +795,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let contract_details_end = IncomingMsgCmd::ContractDetailsEndMsg {
+        let contract_details_end = ServerRspMsg::ContractDataEnd {
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -757,7 +813,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let current_time = IncomingMsgCmd::CurrentTimeMsg {
+        let current_time = ServerRspMsg::CurrentTime {
             time: decode_i64(&mut fields_itr)?,
         };
 
@@ -786,7 +842,7 @@ impl Decoder
         delta_neutral_contract.delta = decode_f64(&mut fields_itr)?;
         delta_neutral_contract.price = decode_f64(&mut fields_itr)?;
 
-        let delta_neutral_validation = IncomingMsgCmd::DeltaNeutralValidationMsg {
+        let delta_neutral_validation = ServerRspMsg::DeltaNeutralValidation {
             req_id: req_id,
             delta_neutral_contract: delta_neutral_contract.clone(),
         };
@@ -805,7 +861,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let display_group_list = IncomingMsgCmd::DisplayGroupListMsg {
+        let display_group_list = ServerRspMsg::DisplayGroupList {
             req_id: decode_i32(&mut fields_itr)?,
             groups: decode_string(&mut fields_itr)?,
         };
@@ -824,7 +880,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let display_group_updated = IncomingMsgCmd::DisplayGroupUpdatedMsg {
+        let display_group_updated = ServerRspMsg::DisplayGroupUpdated {
             req_id: decode_i32(&mut fields_itr)?,
             contract_info: decode_string(&mut fields_itr)?,
         };
@@ -841,7 +897,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let error = IncomingMsgCmd::ErrorMsg {
+        let error = ServerRspMsg::ErrMsg {
             req_id: decode_i32(&mut fields_itr)?,
             error_code: decode_i32(&mut fields_itr)?,
             error_str: decode_string(&mut fields_itr)?,
@@ -938,7 +994,7 @@ impl Decoder
             execution.last_liquidity = decode_i32(&mut fields_itr)?;
         }
 
-        let exec_details = IncomingMsgCmd::ExecDetailsMsg {
+        let exec_details = ServerRspMsg::ExecutionData {
             req_id: req_id,
             contract: contract.clone(),
             execution: execution.clone(),
@@ -958,7 +1014,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let exec_details_end = IncomingMsgCmd::ExecDetailsEndMsg {
+        let exec_details_end = ServerRspMsg::ExecutionDataEnd {
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -983,8 +1039,8 @@ impl Decoder
             family_codes.push(fam_code);
         }
 
-        let family_codes_msg = IncomingMsgCmd::FamilyCodesMsg {
-            family_codes: family_codes.clone()
+        let family_codes_msg = ServerRspMsg::FamilyCodes {
+            family_codes: family_codes.clone(),
         };
 
         self.send_queue.send(family_codes_msg).unwrap();
@@ -1001,7 +1057,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let fundamental_data = IncomingMsgCmd::FundamentalDataMsg {
+        let fundamental_data = ServerRspMsg::FundamentalData {
             req_id: decode_i32(&mut fields_itr)?,
             data: decode_string(&mut fields_itr)?,
         };
@@ -1018,7 +1074,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let fundamental_data = IncomingMsgCmd::FundamentalDataMsg {
+        let fundamental_data = ServerRspMsg::FundamentalData {
             req_id: decode_i32(&mut fields_itr)?,
             data: decode_string(&mut fields_itr)?,
         };
@@ -1046,7 +1102,7 @@ impl Decoder
             histogram.push(data_point);
         }
 
-        let histogram_data = IncomingMsgCmd::HistogramDataMsg {
+        let histogram_data = ServerRspMsg::HistogramData {
             req_id: req_id,
             items: histogram,
         };
@@ -1094,7 +1150,7 @@ impl Decoder
 
             bar.bar_count = decode_i32(&mut fields_itr)?; // ver 3 field
 
-            let historical_data_msg = IncomingMsgCmd::HistoricalDataMsg {
+            let historical_data_msg = ServerRspMsg::HistoricalData {
                 req_id: req_id,
                 bar: bar.clone(),
             };
@@ -1102,7 +1158,7 @@ impl Decoder
             self.send_queue.send(historical_data_msg).unwrap();
         }
 
-        let historical_data_end = IncomingMsgCmd::HistoricalDataEndMsg {
+        let historical_data_end = ServerRspMsg::HistoricalDataEnd {
             req_id: req_id,
             start: start_date.clone(),
             end: end_date.clone(),
@@ -1133,9 +1189,9 @@ impl Decoder
         bar.average = decode_f64(&mut fields_itr)?;
         bar.volume = decode_i64(&mut fields_itr)?;
 
-        let historical_data_update = IncomingMsgCmd::HistoricalDataUpdateMsg {
+        let historical_data_update = ServerRspMsg::HistoricalDataUpdate {
             req_id: req_id,
-            bar: bar.clone()
+            bar: bar.clone(),
         };
 
         self.send_queue.send(historical_data_update).unwrap();
@@ -1150,7 +1206,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let historical_news = IncomingMsgCmd::HistoricalNewsMsg {
+        let historical_news = ServerRspMsg::HistoricalNews {
             req_id: decode_i32(&mut fields_itr)?,
             time: decode_string(&mut fields_itr)?,
             provider_code: decode_string(&mut fields_itr)?,
@@ -1170,7 +1226,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let historical_news_end = IncomingMsgCmd::HistoricalNewsEndMsg {
+        let historical_news_end = ServerRspMsg::HistoricalNewsEnd {
             req_id: decode_i32(&mut fields_itr)?,
             has_more: decode_bool(&mut fields_itr)?,
         };
@@ -1204,7 +1260,7 @@ impl Decoder
 
         let done = decode_bool(&mut fields_itr)?;
 
-        let historical_ticks = IncomingMsgCmd::HistoricalTicksMsg {
+        let historical_ticks = ServerRspMsg::HistoricalTicks {
             req_id: req_id,
             ticks: ticks.clone(),
             done: done,
@@ -1247,7 +1303,7 @@ impl Decoder
 
         let done = decode_bool(&mut fields_itr)?;
 
-        let historical_ticks_bid_ask = IncomingMsgCmd::HistoricalTicksBidAskMsg {
+        let historical_ticks_bid_ask = ServerRspMsg::HistoricalTicksBidAsk {
             req_id: req_id,
             ticks: ticks.clone(),
             done: done,
@@ -1287,7 +1343,7 @@ impl Decoder
 
         let done = decode_bool(&mut fields_itr)?;
 
-        let historical_ticks_last_msg = IncomingMsgCmd::HistoricalTicksLastMsg {
+        let historical_ticks_last_msg = ServerRspMsg::HistoricalTicksLast {
             req_id: req_id,
             ticks: ticks.clone(),
             done: done,
@@ -1308,8 +1364,8 @@ impl Decoder
         fields_itr.next();
 
         info!("calling managed_accounts");
-        let managed_accounts = IncomingMsgCmd::ManagedAccountsMsg {
-            accounts_list: decode_string(&mut fields_itr)?
+        let managed_accounts = ServerRspMsg::ManagedAccts {
+            accounts_list: decode_string(&mut fields_itr)?,
         };
 
         self.send_queue.send(managed_accounts).unwrap();
@@ -1326,7 +1382,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let marketdatatype = IncomingMsgCmd::MarketDataTypeMsg {
+        let marketdatatype = ServerRspMsg::MarketDataType {
             req_id: decode_i32(&mut fields_itr)?,
             market_data_type: decode_i32(&mut fields_itr)?,
         };
@@ -1343,7 +1399,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let update_mkt_depth = IncomingMsgCmd::UpdateMarketDepthMsg {
+        let update_mkt_depth = ServerRspMsg::MarketDepth {
             req_id: decode_i32(&mut fields_itr)?,
             position: decode_i32(&mut fields_itr)?,
             operation: decode_i32(&mut fields_itr)?,
@@ -1379,7 +1435,7 @@ impl Decoder
             is_smart_depth = decode_bool(&mut fields_itr)?;
         }
 
-        let update_mkt_depth_l2 = IncomingMsgCmd::UpdateMarketDepthL2Msg {
+        let update_mkt_depth_l2 = ServerRspMsg::MarketDepthL2 {
             req_id: req_id,
             position: position,
             market_maker: market_maker,
@@ -1414,7 +1470,7 @@ impl Decoder
             price_increments.push(prc_inc);
         }
 
-        let market_rule = IncomingMsgCmd::MarketRuleMsg {
+        let market_rule = ServerRspMsg::MarketRule {
             market_rule_id: market_rule_id,
             price_increments: price_increments,
         };
@@ -1448,7 +1504,7 @@ impl Decoder
             depth_mkt_data_descriptions.push(desc);
         }
 
-        let market_depth_xchng = IncomingMsgCmd::MarketDepthExchangesMsg {
+        let market_depth_xchng = ServerRspMsg::MktDepthExchanges {
             depth_mkt_data_descriptions: depth_mkt_data_descriptions,
         };
 
@@ -1464,7 +1520,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let news_article = IncomingMsgCmd::NewsArticleMsg {
+        let news_article = ServerRspMsg::NewsArticle {
             req_id: decode_i32(&mut fields_itr)?,
             article_type: decode_i32(&mut fields_itr)?,
             article_text: decode_string(&mut fields_itr)?,
@@ -1483,7 +1539,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let news_bulletin = IncomingMsgCmd::UpdateNewsBulletinMsg {
+        let news_bulletin = ServerRspMsg::NewsBulletins {
             msg_id: decode_i32(&mut fields_itr)?,
             msg_type: decode_i32(&mut fields_itr)?,
             news_message: decode_string(&mut fields_itr)?,
@@ -1511,7 +1567,7 @@ impl Decoder
             news_providers.push(provider);
         }
 
-        let news_providers = IncomingMsgCmd::NewsProvidersMsg {
+        let news_providers = ServerRspMsg::NewsProviders {
             news_providers: news_providers,
         };
 
@@ -1529,7 +1585,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let next_valid_id = IncomingMsgCmd::NextValidIdMsg {
+        let next_valid_id = ServerRspMsg::NextValidId {
             order_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -1563,7 +1619,7 @@ impl Decoder
         );
 
         order_decoder.decode_open(&mut fields_itr)?;
-        let open_order_msg = IncomingMsgCmd::OpenOrderMsg {
+        let open_order_msg = ServerRspMsg::OpenOrder {
             order_id: order.order_id,
             contract: contract,
             order: order,
@@ -1582,7 +1638,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let order_bound = IncomingMsgCmd::OrderBoundMsg {
+        let order_bound = ServerRspMsg::OrderBound {
             req_id: decode_i32(&mut fields_itr)?,
             api_client_id: decode_i32(&mut fields_itr)?,
             api_order_id: decode_i32(&mut fields_itr)?,
@@ -1635,18 +1691,18 @@ impl Decoder
         if self.server_version >= MIN_SERVER_VER_MARKET_CAP_PRICE {
             mkt_cap_price = decode_f64(&mut fields_itr)?;
         }
-        let order_status = IncomingMsgCmd::OrderStatusMsg {
-           order_id,
-           status,
-           filled,
-           remaining,
-           avg_fill_price,
-           perm_id,
-           parent_id,
-           last_fill_price,
-           client_id,
-           why_held,
-           mkt_cap_price,
+        let order_status = ServerRspMsg::OrderStatus {
+            order_id,
+            status,
+            filled,
+            remaining,
+            avg_fill_price,
+            perm_id,
+            parent_id,
+            last_fill_price,
+            client_id,
+            why_held,
+            mkt_cap_price,
         };
 
         self.send_queue.send(order_status).unwrap();
@@ -1674,7 +1730,7 @@ impl Decoder
             realized_pnl = decode_f64(&mut fields_itr)?;
         }
 
-        let pnl_msg = IncomingMsgCmd::PnlMsg {
+        let pnl_msg = ServerRspMsg::Pnl {
             req_id,
             daily_pnl,
             unrealized_pnl,
@@ -1708,8 +1764,13 @@ impl Decoder
         }
 
         let value = decode_f64(&mut fields_itr)?;
-        let pnl_single = IncomingMsgCmd::PnlSingleMsg {
-            req_id, pos, daily_pnl, unrealized_pnl, realized_pnl, value,
+        let pnl_single = ServerRspMsg::PnlSingle {
+            req_id,
+            pos,
+            daily_pnl,
+            unrealized_pnl,
+            realized_pnl,
+            value,
         };
 
         self.send_queue.send(pnl_single).unwrap();
@@ -1765,15 +1826,15 @@ impl Decoder
             contract.primary_exchange = decode_string(&mut fields_itr)?;
         }
 
-        let update_portfolio = IncomingMsgCmd::PortfolioValueMsg {
-               contract,
-               position,
-               market_price,
-               market_value,
-               average_cost,
-               unrealized_pnl,
-               realized_pnl,
-               account_name,
+        let update_portfolio = ServerRspMsg::PortfolioValue {
+            contract,
+            position,
+            market_price,
+            market_value,
+            average_cost,
+            unrealized_pnl,
+            realized_pnl,
+            account_name,
         };
 
         self.send_queue.send(update_portfolio).unwrap();
@@ -1820,7 +1881,7 @@ impl Decoder
             avg_cost = decode_f64(&mut fields_itr)?;
         }
 
-        let position_data = IncomingMsgCmd::PositionDataMsg {
+        let position_data = ServerRspMsg::PositionData {
             account,
             contract,
             position,
@@ -1832,7 +1893,7 @@ impl Decoder
         Ok(())
     }
 
-    fn process_end_msg_noarg(&mut self, cmd: IncomingMsgCmd) -> Result<(), IBKRApiLibError> {
+    fn process_end_msg_noarg(&mut self, cmd: ServerRspMsg) -> Result<(), IBKRApiLibError> {
         self.send_queue.send(cmd).unwrap();
         Ok(())
     }
@@ -1867,7 +1928,7 @@ impl Decoder
         let avg_cost = decode_f64(&mut fields_itr)?;
         let model_code = decode_string(&mut fields_itr)?;
 
-        let position_multi = IncomingMsgCmd::PositionMultiMsg {
+        let position_multi = ServerRspMsg::PositionMulti {
             req_id,
             account,
             model_code,
@@ -1890,8 +1951,8 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let position_multi_end = IncomingMsgCmd::PositionMultiEndMsg {
-            req_id: decode_i32(&mut fields_itr)?
+        let position_multi_end = ServerRspMsg::PositionMultiEnd {
+            req_id: decode_i32(&mut fields_itr)?,
         };
 
         self.send_queue.send(position_multi_end).unwrap();
@@ -1919,10 +1980,7 @@ impl Decoder
         bar.wap = decode_f64(&mut fields_itr)?;
         bar.count = decode_i32(&mut fields_itr)?;
 
-        let real_time_bars = IncomingMsgCmd::RealtimeBarMsg {
-            req_id,
-            bar: bar,
-        };
+        let real_time_bars = ServerRspMsg::RealTimeBars { req_id, bar: bar };
 
         self.send_queue.send(real_time_bars).unwrap();
         Ok(())
@@ -1940,7 +1998,7 @@ impl Decoder
         let fa_data_type = decode_i32(&mut fields_itr)?;
         let xml = decode_string(&mut fields_itr)?;
 
-        let receive_fa = IncomingMsgCmd::ReceiveFaMsg {
+        let receive_fa = ServerRspMsg::ReceiveFa {
             fa_data: FromPrimitive::from_i32(fa_data_type).unwrap(),
             cxml: xml,
         };
@@ -1956,7 +2014,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let reroute_mkt_data = IncomingMsgCmd::RerouteMarketDataReqMsg {
+        let reroute_mkt_data = ServerRspMsg::RerouteMktDataReq {
             req_id: decode_i32(&mut fields_itr)?,
             con_id: decode_i32(&mut fields_itr)?,
             exchange: decode_string(&mut fields_itr)?,
@@ -1973,7 +2031,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let reroute_mkt_depth = IncomingMsgCmd::RerouteMarketDepthReqMsg {
+        let reroute_mkt_depth = ServerRspMsg::RerouteMktDepthReq {
             req_id: decode_i32(&mut fields_itr)?,
             con_id: decode_i32(&mut fields_itr)?,
             exchange: decode_string(&mut fields_itr)?,
@@ -2017,22 +2075,20 @@ impl Decoder
             data.benchmark = decode_string(&mut fields_itr)?;
             data.projection = decode_string(&mut fields_itr)?;
             data.legs = decode_string(&mut fields_itr)?;
-            let scanner_data = IncomingMsgCmd::ScannerDataMsg {
-               req_id,
-               rank: data.rank,
-               contract_details: data.contract,
-               distance: data.distance,
-               benchmark: data.benchmark,
-               projection: data.projection,
-               legs_str: data.legs,
+            let scanner_data = ServerRspMsg::ScannerData {
+                req_id,
+                rank: data.rank,
+                contract_details: data.contract,
+                distance: data.distance,
+                benchmark: data.benchmark,
+                projection: data.projection,
+                legs_str: data.legs,
             };
 
             self.send_queue.send(scanner_data).unwrap();
         }
 
-        let scanner_data_end = IncomingMsgCmd::ScannerDataEndMsg {
-           req_id,
-        };
+        let scanner_data_end = ServerRspMsg::ScannerDataEnd { req_id };
 
         self.send_queue.send(scanner_data_end).unwrap();
         Ok(())
@@ -2048,9 +2104,7 @@ impl Decoder
         fields_itr.next();
 
         let xml = decode_string(&mut fields_itr)?;
-        let scanner_params = IncomingMsgCmd::ScannerParametersMsg {
-           xml,
-        };
+        let scanner_params = ServerRspMsg::ScannerParameters { xml };
 
         self.send_queue.send(scanner_params).unwrap();
         Ok(())
@@ -2087,7 +2141,7 @@ impl Decoder
             let big_strike = Decimal::from_f64(strike).unwrap();
             strikes.insert(big_strike);
         }
-        let security_def_opt_param = IncomingMsgCmd::SecurityDefOptionParameterMsg {
+        let security_def_opt_param = ServerRspMsg::SecurityDefinitionOptionParameter {
             req_id,
             exchange,
             underlying_con_id,
@@ -2111,8 +2165,8 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let security_def_opt_param_end = IncomingMsgCmd::SecurityDefOptionParameterEndMsg {
-           req_id: decode_i32(&mut fields_itr)?,
+        let security_def_opt_param_end = ServerRspMsg::SecurityDefinitionOptionParameterEnd {
+            req_id: decode_i32(&mut fields_itr)?,
         };
 
         self.send_queue.send(security_def_opt_param_end).unwrap();
@@ -2137,9 +2191,9 @@ impl Decoder
             smart_component.exchange_letter = decode_string(&mut fields_itr)?;
             smart_components.push(smart_component)
         }
-        let smart_component_msg = IncomingMsgCmd::SmartComponentsMsg {
-           req_id,
-           smart_components,
+        let smart_component_msg = ServerRspMsg::SmartComponents {
+            req_id,
+            smart_components,
         };
 
         self.send_queue.send(smart_component_msg).unwrap();
@@ -2166,10 +2220,7 @@ impl Decoder
             tiers.push(tier);
         }
 
-        let soft_dollar_tiers = IncomingMsgCmd::SoftDollarTiersMsg {
-           req_id,
-           tiers,
-        };
+        let soft_dollar_tiers = ServerRspMsg::SoftDollarTiers { req_id, tiers };
 
         self.send_queue.send(soft_dollar_tiers).unwrap();
         Ok(())
@@ -2203,9 +2254,9 @@ impl Decoder
             contract_descriptions.push(con_desc)
         }
 
-        let symbol_samples = IncomingMsgCmd::SymbolSamplesMsg {
-           req_id,
-           contract_descriptions,
+        let symbol_samples = ServerRspMsg::SymbolSamples {
+            req_id,
+            contract_descriptions,
         };
 
         self.send_queue.send(symbol_samples).unwrap();
@@ -2220,11 +2271,10 @@ impl Decoder
         fields_itr.next();
 
         let req_id = decode_i32(&mut fields_itr)?;
-
         let tick_type = decode_i32(&mut fields_itr)?;
         let time = decode_i64(&mut fields_itr)?;
 
-        match tick_type {
+        let tick_msg = match tick_type {
             0 => return Ok(()), // None
             1..=2 =>
             // Last (1) or AllLast (2)
@@ -2238,18 +2288,13 @@ impl Decoder
                 let exchange = decode_string(&mut fields_itr)?;
                 let special_conditions = decode_string(&mut fields_itr)?;
 
-                let tick_by_tick_all_last = IncomingMsgCmd::TickByTickAllLastMsg {
-                    req_id: req_id,
-                    tick_type: FromPrimitive::from_i32(tick_type).unwrap(),
-                    time,
+                TickMsgType::AllLast {
                     price,
                     size,
                     tick_attrib_last,
                     exchange,
                     special_conditions,
-                };
-
-                self.send_queue.send(tick_by_tick_all_last).unwrap();
+                }
             }
             3 =>
             // BidAsk
@@ -2263,33 +2308,30 @@ impl Decoder
                 tick_attrib_bid_ask.bid_past_low = mask & 1 != 0;
                 tick_attrib_bid_ask.ask_past_high = mask & 2 != 0;
 
-                let tick_by_tick_bid_ask = IncomingMsgCmd::TickByTickBidAskMsg {
-                    req_id,
-                    time,
+                TickMsgType::BidAsk {
                     bid_price,
                     ask_price,
                     bid_size,
                     ask_size,
                     tick_attrib_bid_ask,
-                };
-
-                self.send_queue.send(tick_by_tick_bid_ask).unwrap();
+                }
             }
             4 =>
             // MidPoint
             {
                 let mid_point = decode_f64(&mut fields_itr)?;
 
-                let tick_by_tick_mid_point = IncomingMsgCmd::TickByTickMidPointMsg {
-                    req_id,
-                    time,
-                    mid_point,
-                };
-
-                self.send_queue.send(tick_by_tick_mid_point).unwrap();
+                TickMsgType::MidPoint { mid_point }
             }
             _ => return Ok(()),
-        }
+        };
+        let tick_by_tick_msg = ServerRspMsg::TickByTick {
+            req_id,
+            tick_type,
+            time,
+            tick_msg,
+        };
+        self.send_queue.send(tick_by_tick_msg).unwrap();
         Ok(())
     }
 
@@ -2313,7 +2355,7 @@ impl Decoder
         let dividend_impact = decode_f64(&mut fields_itr)?;
         let dividends_to_last_trade_date = decode_f64(&mut fields_itr)?;
 
-        let tick_efp = IncomingMsgCmd::TickEFPMsg {
+        let tick_efp = ServerRspMsg::TickEfp {
             ticker_id,
             tick_type,
             basis_points,
@@ -2342,7 +2384,7 @@ impl Decoder
         let tick_type = FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap();
         let value = decode_f64(&mut fields_itr)?;
 
-        let tick_generic = IncomingMsgCmd::TickGenericMsg {
+        let tick_generic = ServerRspMsg::TickGeneric {
             ticker_id,
             tick_type,
             value,
@@ -2359,7 +2401,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let tick_news = IncomingMsgCmd::TickNewsMsg {
+        let tick_news = ServerRspMsg::TickNews {
             ticker_id: decode_i32(&mut fields_itr)?,
             time_stamp: decode_i32(&mut fields_itr)?,
             provider_code: decode_string(&mut fields_itr)?,
@@ -2403,7 +2445,10 @@ impl Decoder
         let mut theta = f64::max_value();
         let mut und_price = f64::max_value();
         if version >= 6
-            || matches!(tick_type, TickType::ModelOption | TickType::DelayedModelOption)
+            || matches!(
+                tick_type,
+                TickType::ModelOption | TickType::DelayedModelOption
+            )
         {
             // introduced in version == 5
             opt_price = decode_f64(&mut fields_itr)?;
@@ -2440,17 +2485,17 @@ impl Decoder
             }
         }
 
-        let tick_option_computation = IncomingMsgCmd::TickOptionComputationMsg {
-                ticker_id,
-                tick_type,
-                implied_vol,
-                delta,
-                opt_price,
-                pv_dividend,
-                gamma,
-                vega,
-                theta,
-                und_price,
+        let tick_option_computation = ServerRspMsg::TickOptionComputation {
+            ticker_id,
+            tick_type,
+            implied_vol,
+            delta,
+            opt_price,
+            pv_dividend,
+            gamma,
+            vega,
+            theta,
+            und_price,
         };
 
         self.send_queue.send(tick_option_computation).unwrap();
@@ -2464,7 +2509,7 @@ impl Decoder
         //throw away message_id
         fields_itr.next();
 
-        let tick_req_params = IncomingMsgCmd::TickReqParamsMsg {
+        let tick_req_params = ServerRspMsg::TickReqParams {
             ticker_id: decode_i32(&mut fields_itr)?,
             min_tick: decode_f64(&mut fields_itr)?,
             bbo_exchange: decode_string(&mut fields_itr)?,
@@ -2484,7 +2529,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let tick_size = IncomingMsgCmd::TickSizeMsg {
+        let tick_size = ServerRspMsg::TickSize {
             req_id: decode_i32(&mut fields_itr)?,
             tick_type: FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap(),
             size: decode_i32(&mut fields_itr)?,
@@ -2503,7 +2548,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let tick_snapshot_end = IncomingMsgCmd::TickSnapShotEndMsg {
+        let tick_snapshot_end = ServerRspMsg::TickSnapshotEnd {
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -2526,7 +2571,7 @@ impl Decoder
         let is_successful = "true" == decode_string(&mut fields_itr)?;
         let error_text = decode_string(&mut fields_itr)?;
 
-        let verify_and_auth = IncomingMsgCmd::VerifyAndAuthCompletedMsg {
+        let verify_and_auth = ServerRspMsg::VerifyAndAuthCompleted {
             is_successful,
             error_text,
         };
@@ -2547,7 +2592,7 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let verify_and_auth_message = IncomingMsgCmd::VerifyAndAuthMessageApiMsg {
+        let verify_and_auth_message = ServerRspMsg::VerifyAndAuthMessageApi {
             api_data: decode_string(&mut fields_itr)?,
             xyz_challenge: decode_string(&mut fields_itr)?,
         };
@@ -2567,7 +2612,7 @@ impl Decoder
         let _is_successful_str = decode_string(&mut fields_itr)?;
         let is_successful = "true" == decode_string(&mut fields_itr)?;
         let error_text = decode_string(&mut fields_itr)?;
-        let verify_completed = IncomingMsgCmd::VerifyCompletedMsg {
+        let verify_completed = ServerRspMsg::VerifyCompleted {
             is_successful,
             error_text,
         };
@@ -2585,8 +2630,8 @@ impl Decoder
         //throw away version
         fields_itr.next();
 
-        let verify_message_api = IncomingMsgCmd::VerifyMessageApiMsg {
-            api_data: decode_string(&mut fields_itr)?
+        let verify_message_api = ServerRspMsg::VerifyMessageApi {
+            api_data: decode_string(&mut fields_itr)?,
         };
 
         self.send_queue.send(verify_message_api).unwrap();
@@ -2624,7 +2669,7 @@ impl Decoder
     pub fn run(&mut self) -> Result<(), IBKRApiLibError> {
         // This is the function that has the message loop.
         const CONN_STATE_POISONED: &str = "Connection state mutex was poisoned";
-        let connection_closed = IncomingMsgCmd::ConnectionClosedMsg;
+        //let connection_closed = ServerRspMsg::ConnectionClosed;
         info!("Starting run...");
         // !self.done &&
         loop {
@@ -2633,15 +2678,21 @@ impl Decoder
             match text {
                 Result::Ok(val) => {
                     if val.len() > MAX_MSG_LEN as usize {
-                        let error_msg = IncomingMsgCmd::ErrorMsg {
+                        let error_msg = ServerRspMsg::ErrMsg {
                             req_id: NO_VALID_ID,
                             error_code: TwsError::NotConnected.code(),
-                            error_str: format!("{}:{}:{}", TwsError::NotConnected.message(), val.len(), val).to_string(),
+                            error_str: format!(
+                                "{}:{}:{}",
+                                TwsError::NotConnected.message(),
+                                val.len(),
+                                val
+                            )
+                            .to_string(),
                         };
 
                         self.send_queue.send(error_msg).unwrap();
                         error!("Error receiving message.  Disconnected: Message too big");
-                        self.send_queue.send(connection_closed).unwrap();
+                        //self.send_queue.send(connection_closed).unwrap();
                         *self.conn_state.lock().expect(CONN_STATE_POISONED) =
                             ConnStatus::DISCONNECTED;
                         error!("Error receiving message.  Invalid size.  Disconnected.");
@@ -2656,7 +2707,7 @@ impl Decoder
                         != ConnStatus::DISCONNECTED as i32
                     {
                         info!("Error receiving message.  Disconnected: {:?}", err);
-                        self.send_queue.send(connection_closed).unwrap();
+                        //self.send_queue.send(connection_closed).unwrap();
                         *self.conn_state.lock().expect(CONN_STATE_POISONED) =
                             ConnStatus::DISCONNECTED;
 

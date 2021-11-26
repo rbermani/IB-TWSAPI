@@ -16,7 +16,7 @@
 //! use std::time::Duration;
 //! use ibtwsapi::core::errors::*;
 //! use ibtwsapi::examples::example_wrapper::ExampleWrapper;
-//! 
+//!
 //! /// Example of using client and wrapper.
 //! /// Requires a running instance of TWS or IB Gateway connected to the port in main.
 //! /// Upon connecting, TWS will send the next valid order ID which will cause the wrapper callback method

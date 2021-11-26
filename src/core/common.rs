@@ -227,6 +227,27 @@ impl fmt::Display for FaDataType {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum TickMsgType {
+    AllLast {
+        price: f64,
+        size: i32,
+        tick_attrib_last: TickAttribLast,
+        exchange: String,
+        special_conditions: String,
+    },
+    BidAsk {
+        bid_price: f64,
+        ask_price: f64,
+        bid_size: i32,
+        ask_size: i32,
+        tick_attrib_bid_ask: TickAttribBidAsk,
+    },
+    MidPoint {
+        mid_point: f64,
+    },
+}
+
 //==================================================================================================
 /// Tick by tick types
 #[repr(i32)]
