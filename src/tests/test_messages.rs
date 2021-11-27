@@ -5,7 +5,7 @@ mod tests {
     use crate::core::errors::IBKRApiLibError;
     use crate::core::messages::{
         make_field, make_field_handle_empty, make_message, read_fields, read_msg,
-        OutgoingMessageIds,
+        ServerReqMsgDiscriminants,
     };
     use crate::examples::contract_samples;
     #[test]
@@ -45,7 +45,7 @@ mod tests {
     fn test_make_msg() -> Result<(), IBKRApiLibError> {
         let mut msg = "".to_string();
         let contract = contract_samples::usstock();
-        let message_id = OutgoingMessageIds::ReqTickByTickData as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqTickByTickData as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&1009)?);

@@ -23,7 +23,7 @@ use crate::core::errors::{IBKRApiLibError, TwsApiReportableError, TwsError};
 use crate::core::execution::ExecutionFilter;
 use crate::core::messages::make_field;
 use crate::core::messages::{make_field_handle_empty, read_msg};
-use crate::core::messages::{make_message, read_fields, OutgoingMessageIds, ServerRspMsg};
+use crate::core::messages::{make_message, read_fields, ServerReqMsgDiscriminants, ServerRspMsg};
 use crate::core::order::Order;
 use crate::core::order_condition::Condition;
 use crate::core::reader::Reader;
@@ -226,7 +226,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::SetServerLoglevel as i32;
+        let message_id = ServerReqMsgDiscriminants::SetServerLoglevel as i32;
         let _x = message_id.to_be_bytes();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -249,7 +249,7 @@ impl EClient {
     pub fn req_current_time(&mut self) -> Result<(), IBKRApiLibError> {
         let version = 2;
 
-        let message_id: i32 = OutgoingMessageIds::ReqCurrentTime as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqCurrentTime as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -285,7 +285,7 @@ impl EClient {
 
         let msg = format!(
             "{}{}{}{}",
-            make_field(&mut (Some(OutgoingMessageIds::StartApi).unwrap() as i32))?,
+            make_field(&mut (Some(ServerReqMsgDiscriminants::StartApi).unwrap() as i32))?,
             make_field(&mut version.to_string())?,
             make_field(&mut self.client_id.to_string())?,
             opt_capab
@@ -370,7 +370,7 @@ impl EClient {
 
         let version = 11;
 
-        let message_id: i32 = OutgoingMessageIds::ReqMktData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqMktData as i32;
 
         let mut msg = "".to_string();
 
@@ -468,7 +468,7 @@ impl EClient {
 
         let version = 2;
 
-        let message_id: i32 = OutgoingMessageIds::CancelMktData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelMktData as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -510,7 +510,7 @@ impl EClient {
 
         let mut msg = "".to_string();
         let version = 1;
-        let message_id = OutgoingMessageIds::ReqMarketDataType as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqMarketDataType as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -550,7 +550,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqSmartComponents as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqSmartComponents as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&req_id)?);
@@ -588,7 +588,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqMarketRule as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqMarketRule as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&market_rule_id)?);
@@ -646,7 +646,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqTickByTickData as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqTickByTickData as i32;
 
         msg.push_str(&make_field(&message_id)?);
 
@@ -699,7 +699,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::CancelTickByTickData as i32;
+        let message_id = ServerReqMsgDiscriminants::CancelTickByTickData as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&req_id)?);
@@ -764,7 +764,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqCalcImpliedVolat as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqCalcImpliedVolat as i32;
 
         msg.push_str(&make_field(&message_id)?);
 
@@ -862,7 +862,7 @@ impl EClient {
         // send req mkt data msg
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqCalcOptionPrice as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqCalcOptionPrice as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -931,7 +931,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::CancelCalcOptionPrice as i32;
+        let message_id = ServerReqMsgDiscriminants::CancelCalcOptionPrice as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -970,7 +970,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::CancelCalcImpliedVolat as i32;
+        let message_id = ServerReqMsgDiscriminants::CancelCalcImpliedVolat as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -1031,7 +1031,7 @@ impl EClient {
         // send req mkt data msg
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ExerciseOptions as i32;
+        let message_id = ServerReqMsgDiscriminants::ExerciseOptions as i32;
 
         msg.push_str(&make_field(&message_id)?);
 
@@ -1542,7 +1542,7 @@ impl EClient {
         //send place order msg
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::PlaceOrder as i32;
+        let message_id = ServerReqMsgDiscriminants::PlaceOrder as i32;
 
         msg.push_str(&make_field(&message_id)?);
 
@@ -1963,7 +1963,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::CancelOrder as i32;
+        let message_id = ServerReqMsgDiscriminants::CancelOrder as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -1989,7 +1989,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqOpenOrders as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqOpenOrders as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2017,7 +2017,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqAutoOpenOrders as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqAutoOpenOrders as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2041,7 +2041,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqAllOpenOrders as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqAllOpenOrders as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2063,7 +2063,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqGlobalCancel as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqGlobalCancel as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2089,7 +2089,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqIds as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqIds as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2129,7 +2129,7 @@ impl EClient {
 
         let mut msg = "".to_string();
 
-        let message_id = OutgoingMessageIds::ReqAcctData as i32;
+        let message_id = ServerReqMsgDiscriminants::ReqAcctData as i32;
 
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2166,7 +2166,7 @@ impl EClient {
 
         let version = 2;
 
-        let message_id: i32 = OutgoingMessageIds::ReqAccountSummary as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqAccountSummary as i32;
         let mut msg = "".to_string();
 
         msg.push_str(&make_field(&message_id)?);
@@ -2188,7 +2188,7 @@ impl EClient {
         self.check_connected(req_id)?;
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::CancelAccountSummary as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelAccountSummary as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2220,7 +2220,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::ReqPositions as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqPositions as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2251,7 +2251,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::CancelPositions as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelPositions as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2295,7 +2295,7 @@ impl EClient {
         let mut_req_id = req_id;
         let mut_account = account;
         let mut_model_code = model_code;
-        let message_id: i32 = OutgoingMessageIds::ReqPositionsMulti as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqPositionsMulti as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2332,7 +2332,7 @@ impl EClient {
 
         let version = 1;
         let mut_req_id = req_id;
-        let message_id: i32 = OutgoingMessageIds::CancelPositionsMulti as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelPositionsMulti as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2380,7 +2380,7 @@ impl EClient {
         let mut_model_code = model_code;
         let mut_ledger_and_nlv = ledger_and_nlv;
 
-        let message_id: i32 = OutgoingMessageIds::ReqAccountUpdatesMulti as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqAccountUpdatesMulti as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2418,7 +2418,7 @@ impl EClient {
 
         let version = 1;
         let mut_req_id = req_id;
-        let message_id: i32 = OutgoingMessageIds::CancelAccountUpdatesMulti as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelAccountUpdatesMulti as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2458,7 +2458,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqPnl as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqPnl as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&req_id)?);
@@ -2490,7 +2490,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::CancelPnl as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelPnl as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&req_id)?);
@@ -2529,7 +2529,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqPnlSingle as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqPnlSingle as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&req_id)?);
@@ -2562,7 +2562,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::CancelPnlSingle as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelPnlSingle as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&req_id)?);
@@ -2596,7 +2596,7 @@ impl EClient {
         self.check_connected(req_id)?;
 
         let version = 3;
-        let message_id: i32 = OutgoingMessageIds::ReqExecutions as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqExecutions as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2683,7 +2683,7 @@ impl EClient {
 
         let version = 8;
 
-        let message_id: i32 = OutgoingMessageIds::ReqContractData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqContractData as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2755,7 +2755,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqMktDepthExchanges as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqMktDepthExchanges as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -2843,7 +2843,7 @@ impl EClient {
 
         // send req mkt depth msg
 
-        let message_id: i32 = OutgoingMessageIds::ReqMktDepth as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqMktDepth as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2928,7 +2928,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::CancelMktDepth as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelMktDepth as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2956,7 +2956,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::ReqNewsBulletins as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqNewsBulletins as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2973,7 +2973,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::CancelNewsBulletins as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelNewsBulletins as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -2992,7 +2992,7 @@ impl EClient {
         self.check_connected(NO_VALID_ID)?;
 
         let version = 1;
-        let message_id: i32 = OutgoingMessageIds::ReqManagedAccts as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqManagedAccts as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -3012,7 +3012,7 @@ impl EClient {
         self.check_connected(NO_VALID_ID)?;
 
         let version = 1;
-        let message_id: i32 = OutgoingMessageIds::ReqFa as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqFa as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -3037,7 +3037,7 @@ impl EClient {
         self.check_connected(NO_VALID_ID)?;
 
         let version = 1;
-        let message_id: i32 = OutgoingMessageIds::ReplaceFa as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReplaceFa as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3136,7 +3136,7 @@ impl EClient {
         let version = 6;
 
         // send req mkt data msg
-        let message_id: i32 = OutgoingMessageIds::ReqHistoricalData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqHistoricalData as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3210,7 +3210,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::CancelHistoricalData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelHistoricalData as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3258,7 +3258,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqHeadTimestamp as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqHeadTimestamp as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3306,7 +3306,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::CancelHeadTimestamp as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelHeadTimestamp as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3347,7 +3347,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqHistogramData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqHistogramData as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3394,7 +3394,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::CancelHistogramData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelHistogramData as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&ticker_id)?);
@@ -3444,7 +3444,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqHistoricalTicks as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqHistoricalTicks as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3491,7 +3491,7 @@ impl EClient {
         self.check_connected(NO_VALID_ID)?;
 
         let version = 1;
-        let message_id: i32 = OutgoingMessageIds::ReqScannerParameters as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqScannerParameters as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -3533,7 +3533,7 @@ impl EClient {
 
         let version = 4;
 
-        let message_id: i32 = OutgoingMessageIds::ReqScannerSubscription as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqScannerSubscription as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3601,7 +3601,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::CancelScannerSubscription as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelScannerSubscription as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3669,7 +3669,7 @@ impl EClient {
 
         let version = 3;
 
-        let message_id: i32 = OutgoingMessageIds::ReqRealTimeBars as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqRealTimeBars as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3722,7 +3722,7 @@ impl EClient {
         let version = 1;
 
         // Send req mkt data msg
-        let message_id: i32 = OutgoingMessageIds::CancelRealTimeBars as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelRealTimeBars as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3797,7 +3797,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqFundamentalData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqFundamentalData as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3855,7 +3855,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::CancelFundamentalData as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::CancelFundamentalData as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3888,7 +3888,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqNewsProviders as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqNewsProviders as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3928,7 +3928,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqNewsArticle as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqNewsArticle as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -3987,7 +3987,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqHistoricalNews as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqHistoricalNews as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4041,7 +4041,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::QueryDisplayGroups as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::QueryDisplayGroups as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
@@ -4080,7 +4080,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::SubscribeToGroupEvents as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::SubscribeToGroupEvents as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4125,7 +4125,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::UpdateDisplayGroup as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::UpdateDisplayGroup as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4161,7 +4161,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::UnsubscribeFromGroupEvents as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::UnsubscribeFromGroupEvents as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4211,7 +4211,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::VerifyRequest as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::VerifyRequest as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4244,7 +4244,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::VerifyMessage as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::VerifyMessage as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4295,7 +4295,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::VerifyAndAuthRequest as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::VerifyAndAuthRequest as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4333,7 +4333,7 @@ impl EClient {
 
         let version = 1;
 
-        let message_id: i32 = OutgoingMessageIds::VerifyAndAuthMessage as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::VerifyAndAuthMessage as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4378,7 +4378,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqSecDefOptParams as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqSecDefOptParams as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4402,7 +4402,7 @@ impl EClient {
     pub fn req_soft_dollar_tiers(&mut self, req_id: i32) -> Result<(), IBKRApiLibError> {
         self.check_connected(NO_VALID_ID)?;
 
-        let message_id: i32 = OutgoingMessageIds::ReqSoftDollarTiers as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqSoftDollarTiers as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4431,7 +4431,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqFamilyCodes as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqFamilyCodes as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4466,7 +4466,7 @@ impl EClient {
             return Err(err);
         }
 
-        let message_id: i32 = OutgoingMessageIds::ReqMatchingSymbols as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqMatchingSymbols as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 
@@ -4486,7 +4486,7 @@ impl EClient {
     pub fn req_completed_orders(&mut self, api_only: bool) -> Result<(), IBKRApiLibError> {
         self.check_connected(NO_VALID_ID)?;
 
-        let message_id: i32 = OutgoingMessageIds::ReqCompletedOrders as i32;
+        let message_id: i32 = ServerReqMsgDiscriminants::ReqCompletedOrders as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
 

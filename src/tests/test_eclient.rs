@@ -17,7 +17,7 @@ mod tests {
     use crate::{
         core::{
             errors::IBKRApiLibError,
-            messages::{read_fields, read_msg, OutgoingMessageIds},
+            messages::{read_fields, read_msg, ServerReqMsgDiscriminants},
             order::OrderState,
         },
         examples::contract_samples::simple_future,
@@ -66,7 +66,7 @@ mod tests {
         let fields = read_fields(&msg_data.1);
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqAccountSummary as u8,
+            ServerReqMsgDiscriminants::ReqAccountSummary as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
@@ -99,7 +99,7 @@ mod tests {
         let fields = read_fields(&msg_data.1);
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqAcctData as u8,
+            ServerReqMsgDiscriminants::ReqAcctData as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
@@ -137,7 +137,7 @@ mod tests {
         let fields = read_fields(&msg_data.1);
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqAccountUpdatesMulti as u8,
+            ServerReqMsgDiscriminants::ReqAccountUpdatesMulti as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
@@ -171,7 +171,7 @@ mod tests {
 
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqAllOpenOrders as u8,
+            ServerReqMsgDiscriminants::ReqAllOpenOrders as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
@@ -202,7 +202,7 @@ mod tests {
 
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqAutoOpenOrders as u8,
+            ServerReqMsgDiscriminants::ReqAutoOpenOrders as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
@@ -233,7 +233,7 @@ mod tests {
 
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqCompletedOrders as u8,
+            ServerReqMsgDiscriminants::ReqCompletedOrders as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
@@ -268,7 +268,7 @@ mod tests {
 
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqContractData as u8,
+            ServerReqMsgDiscriminants::ReqContractData as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
@@ -323,7 +323,7 @@ mod tests {
 
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqCurrentTime as u8,
+            ServerReqMsgDiscriminants::ReqCurrentTime as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
@@ -376,7 +376,7 @@ mod tests {
         //println!("read fields: {:?}", read_fields(&msg_data.1));
         assert_eq!(expected.as_ref(), buf.as_slice());
         assert_eq!(
-            OutgoingMessageIds::ReqExecutions as u8,
+            ServerReqMsgDiscriminants::ReqExecutions as u8,
             fields[0].parse::<u8>().unwrap()
         );
         assert_eq!(version, fields[1].parse::<i32>().unwrap());
