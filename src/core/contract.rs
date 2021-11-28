@@ -128,6 +128,26 @@ impl Display for DeltaNeutralContract {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ContractPreamble {
+    con_id: i32,
+    symbol: String,
+    sec_type: String,
+    last_trade_date_or_contract_month: String,
+    strike: f64,
+    right: String,
+    multiplier: String,
+    exchange: String,
+    primary_exchange: String,
+    // pick an actual (ie non - aggregate) exchange that the contract trades on. DO NOT SET TO SMART.
+    currency: String,
+    local_symbol: String,
+}
+
+pub struct ComboLegsContainer {
+
+
+}
 //==================================================================================================
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Contract {

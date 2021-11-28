@@ -16,6 +16,8 @@ name = "ibtws_client"
 path = "src/bin/manual_tests.rs"
 
 [dependencies]
+enum_index = "0.2.0"
+enum_index_derive = "0.2.0"
 bzip2 = "0.3.3"
 log = "0.4.8"
 log4rs = "0.12.0"
@@ -26,6 +28,7 @@ num-derive = "0.3"
 num-traits = "0.2.12"
 byteorder = "1.3.4"
 ascii = "1.0.0"
+thiserror = "1.0.30"
 from-ascii = "0.0.1"
 serde = { version = "1.0", features = ["derive"] }
 rust_decimal = { version = "1.17", features = ["serde-str"] }

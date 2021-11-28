@@ -19,11 +19,11 @@ use crate::core::common::{
     RealTimeBar, SmartComponent, TickAttrib, TickAttribBidAsk, TickAttribLast, TickByTickType,
     TickMsgType, TickType, UNSET_DOUBLE, UNSET_INTEGER,
 };
-use crate::core::contract::{Contract, ContractDescription, ContractDetails, DeltaNeutralContract};
+use crate::core::contract::{Contract, ContractDescription, ContractPreamble, ContractDetails, DeltaNeutralContract};
 use crate::core::errors::IBKRApiLibError;
 use crate::core::execution::{Execution,ExecutionFilter};
 use crate::core::scanner::ScannerSubscription;
-use crate::core::order::{Order, OrderState, SoftDollarTier};
+use crate::core::order::{Order, OrderMain, OrderState, SoftDollarTier};
 use serde::Deserialize;
 use serde::Serialize;
 use strum::{VariantNames, EnumMessage};
@@ -443,10 +443,12 @@ pub enum ServerRspMsg {
 #[derive(Clone, Serialize, Deserialize, EnumDiscriminants, Debug, Display)]
 #[strum_discriminants(derive(FromPrimitive, EnumString, EnumVariantNames))]
 pub enum ServerReqMsg {
+    //complex
     ReqMktData {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
         generic_tick_list: String,
         snapshot: bool,
         regulatory_snapshot: bool,
@@ -456,11 +458,15 @@ pub enum ServerReqMsg {
         version: i32,
         req_id: i32,
     },
+    //complex
     PlaceOrder {
         version: i32,
         order_id: i32,
-        contract: Contract,
-        order: Order,
+        contract: ContractPreamble,
+        trading_class: String,
+        sec_id_type: String,
+        sec_id: String,
+        order: OrderMain,
     },
     CancelOrder {
         version: i32,
@@ -486,12 +492,17 @@ pub enum ServerReqMsg {
     ReqContractData {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
+        sec_id_type: String,
+        sec_id: String,
     },
     ReqMktDepth {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
         num_rows: i32,
         is_smart_depth: bool,
         mkt_depth_options: String,
@@ -501,9 +512,17 @@ pub enum ServerReqMsg {
         req_id: i32,
         is_smart_depth: bool,
     },
-    ReqNewsBulletins,
-    CancelNewsBulletins,
-    SetServerLoglevel,
+    ReqNewsBulletins {
+        version: i32,
+        all_msgs: bool,
+    },
+    CancelNewsBulletins {
+        version: i32,
+    },
+    SetServerLoglevel {
+        version: i32,
+        log_level: i32,
+    },
     ReqAutoOpenOrders {
         version: i32,
         auto_bind: bool,
@@ -526,14 +545,17 @@ pub enum ServerReqMsg {
     ReqHistoricalData {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
         keep_up_to_date: bool,
         chart_options: String,
     },
     ExerciseOptions {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
         exercise_action: i32,
         exercise_quantity: i32,
         account: String,
@@ -563,7 +585,8 @@ pub enum ServerReqMsg {
     ReqRealTimeBars {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
         bar_size: i32,
         what_to_show: String,
         use_rth: bool,
@@ -576,7 +599,7 @@ pub enum ServerReqMsg {
     ReqFundamentalData {
         version: i32,
         req_id: i32,
-        contract: Contract, // abreviated contract field
+        contract: ContractPreamble,
         report_type: String,
         tags_value_count: i32,
         fund_data_opt: String,
@@ -585,7 +608,16 @@ pub enum ServerReqMsg {
         version: i32,
         req_id: i32,
     },
-    ReqCalcImpliedVolat,
+    ReqCalcImpliedVolat {
+        version: i32,
+        req_id: i32,
+        contract: ContractPreamble, // abreviated contract field
+        trading_class: String,
+        option_price: f64,
+        under_price: f64,
+        tag_values_cnt: usize,
+        impl_vol_opt: String,
+    },
     ReqCalcOptionPrice,
     CancelCalcImpliedVolat,
     CancelCalcOptionPrice,
@@ -629,14 +661,18 @@ pub enum ServerReqMsg {
     },
     ReqHeadTimestamp {
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
         use_rth: i32,
         what_to_show: String,
         format_date: i32,
     },
     ReqHistogramData {
         ticker_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
         use_rth: bool,
         time_period: String,
     },
@@ -668,7 +704,9 @@ pub enum ServerReqMsg {
     },
     ReqHistoricalTicks {
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
         start_date_time: String,
         end_date_time: String,
         number_of_ticks: i32,
@@ -679,7 +717,9 @@ pub enum ServerReqMsg {
     },
     ReqTickByTickData {
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        tick_type: String,
         number_of_ticks: i32,
         ignore_size: bool,
     },

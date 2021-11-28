@@ -4,7 +4,8 @@ use std::fmt::{Display, Error, Formatter};
 use num_derive::FromPrimitive;
 
 use serde::{Deserialize, Serialize};
-
+use serde::ser::{Serializer, SerializeStruct};
+use serde::de::{self, Deserializer, Visitor, SeqAccess};
 use crate::core::common::{TagValue, UNSET_DOUBLE, UNSET_INTEGER};
 use crate::core::order::AuctionStrategy::AuctionUnset;
 use crate::core::order::Origin::Customer;
@@ -206,32 +207,166 @@ impl Display for OrderComboLeg {
     }
 }
 
-//==================================================================================================
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Order {
-    pub soft_dollar_tier: SoftDollarTier,
-    // order identifier
-    pub order_id: i32,
-    pub client_id: i32,
-    pub perm_id: i32,
+pub struct VolatilityOrder {
+    // VOLATILITY ORDERS ONLY
+    pub volatility: f64,
+    // type: float
+    pub volatility_type: i32,
+    // type: int   // 1=daily, 2=annual
+    pub delta_neutral_order_type: String,
+    pub delta_neutral_aux_price: f64,
+    // type: float
+    pub delta_neutral_con_id: i32,
+    pub delta_neutral_settling_firm: String,
+    pub delta_neutral_clearing_account: String,
+    pub delta_neutral_clearing_intent: String,
+    pub delta_neutral_open_close: String,
+    pub delta_neutral_short_sale: bool,
+    pub delta_neutral_short_sale_slot: i32,
+    pub delta_neutral_designated_location: String,
+}
 
+impl serde::ser::Serialize for VolatilityOrder {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    {
+        // 12 is the number of fields in the struct.
+        let mut state = serializer.serialize_struct("VolatilityOrder", 12)?;
+        state.serialize_field("volatility", &self.volatility)?;
+        state.serialize_field("volatility_type", &self.volatility_type)?;
+        state.serialize_field("delta_neutral_order_type", &self.delta_neutral_order_type)?;
+        state.serialize_field("delta_neutral_aux_price", &self.delta_neutral_aux_price)?;
+
+        if !self.delta_neutral_order_type.is_empty() {
+            state.serialize_field("delta_neutral_con_id", &self.delta_neutral_con_id)?;
+            state.serialize_field("delta_neutral_settling_firm", &self.delta_neutral_settling_firm)?;
+            state.serialize_field("delta_neutral_clearing_account", &self.delta_neutral_clearing_account)?;
+            state.serialize_field("delta_neutral_clearing_intent", &self.delta_neutral_clearing_intent)?;
+            state.serialize_field("delta_neutral_open_close", &self.delta_neutral_open_close)?;
+            state.serialize_field("delta_neutral_short_sale", &self.delta_neutral_short_sale)?;
+            state.serialize_field("delta_neutral_short_sale_slot", &self.delta_neutral_short_sale_slot)?;
+            state.serialize_field("delta_neutral_designated_location", &self.delta_neutral_designated_location)?;
+        } else {
+            state.skip_field("delta_neutral_con_id")?;
+            state.skip_field("delta_neutral_settling_firm")?;
+            state.skip_field("delta_neutral_clearing_account")?;
+            state.skip_field("delta_neutral_clearing_intent")?;
+            state.skip_field("delta_neutral_open_close")?;
+            state.skip_field("delta_neutral_short_sale")?;
+            state.skip_field("delta_neutral_short_sale_slot")?;
+            state.skip_field("delta_neutral_designated_location")?;            
+        }
+
+        state.end()
+    }
+}
+
+impl<'de> serde::de::Deserialize<'de> for VolatilityOrder {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct VolatilityOrderVisitor;
+
+        impl<'de> Visitor<'de> for VolatilityOrderVisitor {
+            type Value = VolatilityOrder;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("struct VolatilityOrder")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<VolatilityOrder, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let volatility = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let volatility_type = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let delta_neutral_order_type: String = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                let delta_neutral_aux_price = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+
+                let mut delta_neutral_con_id = 0;
+                let mut delta_neutral_settling_firm = "".to_string();
+                let mut delta_neutral_clearing_account = "".to_string();
+                let mut delta_neutral_clearing_intent = "".to_string();
+                let mut delta_neutral_open_close = "".to_string();
+                let mut delta_neutral_short_sale = false;
+                let mut delta_neutral_short_sale_slot = 0;
+                let mut delta_neutral_designated_location = "".to_string();
+
+                if !delta_neutral_order_type.is_empty() {
+                    delta_neutral_con_id = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                    delta_neutral_settling_firm = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(5, &self))?;
+                    delta_neutral_clearing_account = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(6, &self))?;
+                    delta_neutral_clearing_intent = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(7, &self))?;
+                    delta_neutral_open_close = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(8, &self))?;
+                    delta_neutral_short_sale = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(9, &self))?;
+                    delta_neutral_short_sale_slot = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(10, &self))?;
+                    delta_neutral_designated_location = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(11, &self))?;
+                }
+
+                Ok(VolatilityOrder {volatility,
+                    volatility_type,
+                    delta_neutral_order_type,
+                    delta_neutral_aux_price,
+                    delta_neutral_con_id,
+                    delta_neutral_settling_firm,
+                    delta_neutral_clearing_account,
+                    delta_neutral_clearing_intent,
+                    delta_neutral_open_close,
+                    delta_neutral_short_sale,
+                    delta_neutral_short_sale_slot,
+                    delta_neutral_designated_location,
+                    })
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &["volatility",
+                    "volatility_type",
+                    "delta_neutral_order_type",
+                    "delta_neutral_aux_price",
+                    "delta_neutral_con_id",
+                    "delta_neutral_settling_firm",
+                    "delta_neutral_clearing_account",
+                    "delta_neutral_clearing_intent",
+                    "delta_neutral_open_close",
+                    "delta_neutral_short_sale",
+                    "delta_neutral_short_sale_slot",
+                    "delta_neutral_designated_location",
+                    ];
+        deserializer.deserialize_struct("VolatilityOrder", FIELDS, VolatilityOrderVisitor)
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrderMain {
     // main order fields
     pub action: String,
     pub total_quantity: f64,
     pub order_type: String,
     pub lmt_price: f64,
     pub aux_price: f64,
-
     // extended order fields
     pub tif: String,
-    // "Time in Force" - DAY, GTC, etc.
-    pub active_start_time: String,
-    // for GTC orders
-    pub active_stop_time: String,
     // for GTC orders
     pub oca_group: String,
-    // one cancels all group name
-    pub oca_type: i32,
+    // Clearing info
+    pub account: String,
+    //used only when short_sale_slot=2
+    pub open_close: String,
+    // O=Open, C=Close
+    pub origin: Origin,
+
     // 1 = CANCEL_WITH_BLOCK, 2 = REDUCE_WITH_BLOCK, 3 = REDUCE_NON_BLOCK
     pub order_ref: String,
     pub transmit: bool,
@@ -245,48 +380,47 @@ pub struct Order {
     // 0=Default, 1=Double_Bid_Ask, 2=Last, 3=Double_Last, 4=Bid_Ask, 7=Last_or_Bid_Ask, 8=Mid-point
     pub outside_rth: bool,
     pub hidden: bool,
+}
+
+pub struct OrderCopy {
+    // order identifier
+    pub order_id: i32,
+    pub main: OrderMain,
+    // "Time in Force" - DAY, GTC, etc.
+    pub active_start_time: String,
+    // for GTC orders
+    pub active_stop_time: String,
+    pub discretionary_amt: f64,
     pub good_after_time: String,
     // Format: 20060505 08:00:00 {time zone}
     pub good_till_date: String,
+    // financial advisors only
+    pub fa_group: String,
+    pub fa_method: String,
+    pub fa_percentage: String,
+    pub fa_profile: String,
+    // models
+    pub model_code: String,
+    // 0=Customer, 1=Firm
+    pub short_sale_slot: i32,
+    // institutional (ie non-cleared) only
+    pub designated_location: String,
+    // type: int; 1 if you hold the shares, 2 if they will be delivered from elsewhere.  Only for Action=SSHORT
+    pub exempt_code: i32,
+    // one cancels all group name
+    pub oca_type: i32,
     // Format: 20060505 08:00:00 {time zone}
     pub rule80a: String,
     // Individual = 'I', Agency = 'A', AgentOtherMember = 'W', IndividualPTIA = 'J', AgencyPTIA = 'U', AgentOtherMemberPTIA = 'M', IndividualPT = 'K', AgencyPT = 'Y', AgentOtherMemberPT = 'N'
+    pub settling_firm: String,
     pub all_or_none: bool,
     pub min_qty: i32,
     //type: int
     pub percent_offset: f64,
-    // type: float; REL orders only
-    pub override_percentage_constraints: bool,
-    pub trail_stop_price: f64,
-    // type: float
-    pub trailing_percent: f64, // type: float; TRAILLIMIT orders only
-
-    // financial advisors only
-    pub fa_group: String,
-    pub fa_profile: String,
-    pub fa_method: String,
-    pub fa_percentage: String,
-
-    // institutional (ie non-cleared) only
-    pub designated_location: String,
-    //used only when short_sale_slot=2
-    pub open_close: String,
-    // O=Open, C=Close
-    pub origin: Origin,
-    // 0=Customer, 1=Firm
-    pub short_sale_slot: i32,
-    // type: int; 1 if you hold the shares, 2 if they will be delivered from elsewhere.  Only for Action=SSHORT
-    pub exempt_code: i32,
-
     // SMART routing only
-    pub discretionary_amt: f64,
     pub e_trade_only: bool,
     pub firm_quote_only: bool,
     pub nbbo_price_cap: f64,
-    // type: float
-    pub opt_out_smart_routing: bool,
-
-    // BOX exchange orders only
     pub auction_strategy: AuctionStrategy,
     // type: int; AuctionMatch, AuctionImprovement, AuctionTransparent
     pub starting_price: f64,
@@ -294,15 +428,116 @@ pub struct Order {
     pub stock_ref_price: f64,
     // type: float
     pub delta: f64, // type: float
-
     // pegged to stock and VOL orders only
     pub stock_range_lower: f64,
     // type: float
     pub stock_range_upper: f64, // type: float
+    // type: float; REL orders only
+    pub override_percentage_constraints: bool,
 
+    pub vol_order: VolatilityOrder,
+    pub continuous_update: bool,
+    pub reference_price_type: i32, // type: int; 1=Average, 2 = BidOrAsk
+    pub trail_stop_price: f64,
+    // type: float
+    pub trailing_percent: f64, // type: float; TRAILLIMIT orders only
+
+
+    // type: float
+    pub opt_out_smart_routing: bool,
+
+    // BOX exchange orders only
     pub randomize_price: bool,
     pub randomize_size: bool,
+}
 
+//==================================================================================================
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Order {
+
+    // order identifier
+    pub order_id: i32,
+
+    // main order fields
+    pub action: String,
+    pub total_quantity: f64,
+    pub order_type: String,
+    pub lmt_price: f64,
+    pub aux_price: f64,
+
+    // extended order fields
+    pub tif: String,
+    // for GTC orders
+    pub oca_group: String,
+    // Clearing info
+    pub account: String,
+    //used only when short_sale_slot=2
+    pub open_close: String,
+    // O=Open, C=Close
+    pub origin: Origin,
+
+    // 1 = CANCEL_WITH_BLOCK, 2 = REDUCE_WITH_BLOCK, 3 = REDUCE_NON_BLOCK
+    pub order_ref: String,
+    pub transmit: bool,
+    // if false, order will be created but not transmited
+    pub parent_id: i32,
+    // Parent order Id, to associate Auto STP or TRAIL orders with the original order.
+    pub block_order: bool,
+    pub sweep_to_fill: bool,
+    pub display_size: i32,
+    pub trigger_method: i32,
+    // 0=Default, 1=Double_Bid_Ask, 2=Last, 3=Double_Last, 4=Bid_Ask, 7=Last_or_Bid_Ask, 8=Mid-point
+    pub outside_rth: bool,
+    pub hidden: bool,
+
+    // "Time in Force" - DAY, GTC, etc.
+    pub active_start_time: String,
+    // for GTC orders
+    pub active_stop_time: String,
+    pub discretionary_amt: f64,
+    pub good_after_time: String,
+    // Format: 20060505 08:00:00 {time zone}
+    pub good_till_date: String,
+    // financial advisors only
+    pub fa_group: String,
+    pub fa_method: String,
+    pub fa_percentage: String,
+    pub fa_profile: String,
+    // models
+    pub model_code: String,
+    // 0=Customer, 1=Firm
+    pub short_sale_slot: i32,
+    // institutional (ie non-cleared) only
+    pub designated_location: String,
+    // type: int; 1 if you hold the shares, 2 if they will be delivered from elsewhere.  Only for Action=SSHORT
+    pub exempt_code: i32,
+    // one cancels all group name
+    pub oca_type: i32,
+    // Format: 20060505 08:00:00 {time zone}
+    pub rule80a: String,
+    // Individual = 'I', Agency = 'A', AgentOtherMember = 'W', IndividualPTIA = 'J', AgencyPTIA = 'U', AgentOtherMemberPTIA = 'M', IndividualPT = 'K', AgencyPT = 'Y', AgentOtherMemberPT = 'N'
+    pub settling_firm: String,
+    pub all_or_none: bool,
+    pub min_qty: i32,
+    //type: int
+    pub percent_offset: f64,
+    // SMART routing only
+    pub e_trade_only: bool,
+    pub firm_quote_only: bool,
+    pub nbbo_price_cap: f64,
+    pub auction_strategy: AuctionStrategy,
+    // type: int; AuctionMatch, AuctionImprovement, AuctionTransparent
+    pub starting_price: f64,
+    // type: float
+    pub stock_ref_price: f64,
+    // type: float
+    pub delta: f64, // type: float
+    // pegged to stock and VOL orders only
+    pub stock_range_lower: f64,
+    // type: float
+    pub stock_range_upper: f64, // type: float
+    // type: float; REL orders only
+    pub override_percentage_constraints: bool,
     // VOLATILITY ORDERS ONLY
     pub volatility: f64,
     // type: float
@@ -321,6 +556,20 @@ pub struct Order {
     pub delta_neutral_designated_location: String,
     pub continuous_update: bool,
     pub reference_price_type: i32, // type: int; 1=Average, 2 = BidOrAsk
+    pub trail_stop_price: f64,
+    // type: float
+    pub trailing_percent: f64, // type: float; TRAILLIMIT orders only
+
+
+    // type: float
+    pub opt_out_smart_routing: bool,
+
+    // BOX exchange orders only
+
+
+    pub randomize_price: bool,
+    pub randomize_size: bool,
+
 
     // COMBO ORDERS ONLY
     pub basis_points: f64,
@@ -353,21 +602,17 @@ pub struct Order {
     // 'D' - delta, 'B' - beta, 'F' - FX, 'P' - pair
     pub hedge_param: String, // 'beta=X' value for beta hedge, 'ratio=Y' for pair hedge
 
-    // Clearing info
-    pub account: String,
     // IB account
-    pub settling_firm: String,
+
     pub clearing_account: String,
     //True beneficiary of the order
     pub clearing_intent: String, // "" (Default), "IB", "Away", "PTA" (PostTrade)
 
     // ALGO ORDERS ONLY
     pub algo_strategy: String,
-
     pub algo_params: Vec<TagValue>,
     //TagValueList
     pub smart_combo_routing_params: Vec<TagValue>, //TagValueList
-
     pub algo_id: String,
 
     // What-if
@@ -376,9 +621,6 @@ pub struct Order {
     // Not Held
     pub not_held: bool,
     pub solicited: bool,
-
-    // models
-    pub model_code: String,
 
     // order combo legs
     pub order_combo_legs: Vec<OrderComboLeg>, // OrderComboLegListSPtr
@@ -408,6 +650,7 @@ pub struct Order {
     // ext operator
     pub ext_operator: String,
 
+    pub soft_dollar_tier: SoftDollarTier,
     // native cash quantity
     pub cash_qty: f64,
 
@@ -432,6 +675,8 @@ pub struct Order {
     pub parent_perm_id: i32,
 
     pub use_price_mgmt_algo: bool,
+    pub client_id: i32,
+    pub perm_id: i32,
 }
 
 impl Order {
