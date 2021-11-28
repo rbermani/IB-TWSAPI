@@ -17,13 +17,14 @@ use crate::core::common::{
     BarData, CommissionReport, DepthMktDataDescription, FaDataType, FamilyCode, HistogramData,
     HistoricalTick, HistoricalTickBidAsk, HistoricalTickLast, NewsProvider, PriceIncrement,
     RealTimeBar, SmartComponent, TickAttrib, TickAttribBidAsk, TickAttribLast, TickByTickType,
-    TickMsgType, TickType, UNSET_DOUBLE, UNSET_INTEGER,
+    TickMsgType, TickType, TagValue, UNSET_DOUBLE, UNSET_INTEGER,
 };
-use crate::core::contract::{Contract, ContractDescription, ContractDetails, DeltaNeutralContract};
+use crate::core::contract::{Contract, ContractDescription, ComboLeg, ComboLegPreamble, ContractPreamble, ContractDetails, DeltaNeutralContract};
 use crate::core::errors::IBKRApiLibError;
 use crate::core::execution::{Execution,ExecutionFilter};
 use crate::core::scanner::ScannerSubscription;
-use crate::core::order::{Order, OrderState, SoftDollarTier};
+use crate::core::order::{AuctionStrategy, VolatilityOrder, Order, OrderComboLeg, OrderPreamble, OrderState, SoftDollarTier};
+use crate::core::order_condition::{OrderConditionEnum};
 use serde::Deserialize;
 use serde::Serialize;
 use strum::{VariantNames, EnumMessage};
@@ -44,7 +45,7 @@ pub enum FAMessageDataTypes {
     Aliases = 3,
 }
 
-#[derive(Clone, Serialize, Deserialize, EnumDiscriminants, Debug, Display)]
+#[derive(Clone, Serialize, EnumDiscriminants, Debug, Display)]
 #[strum_discriminants(derive(FromPrimitive, EnumString, EnumVariantNames))]
 pub enum ServerRspMsg {
     TickPrice {
@@ -440,17 +441,126 @@ pub enum ServerRspMsg {
     },
 }
 
-#[derive(Clone, Serialize, Deserialize, EnumDiscriminants, Debug, Display)]
+#[derive(Clone, Deserialize, Debug)]
+pub struct ReqMktDataFields {
+    contract: ContractPreamble,
+    trading_class: String,
+    combo_legs: Vec<ComboLegPreamble>, 
+    delta_neutral_contract: Option<DeltaNeutralContract>,
+    generic_tick_list: String,
+    snapshot: bool,
+    regulatory_snapshot: bool,
+    mkt_data_options: String, // internal use only, serialize as empty string field
+}
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct PlaceOrderFields {
+    contract: ContractPreamble,
+    trading_class: String,
+    sec_id_type: String,
+    sec_id: String,
+    order: OrderPreamble,
+    contract_combo_legs: Vec<ComboLeg>,
+    order_combo_legs: Vec<OrderComboLeg>,
+    smart_combo_routing_params_count: usize,
+    smart_combo_routing_params: Vec<TagValue>,
+    _shares_alloc_deprecated: i32, // deprecated field, empty string
+    discretionary_amt: f64,
+    good_after_time: String,
+    good_till_date: String,
+    fa_group: String,
+    fa_method: String,
+    fa_percentage: String,
+    fa_profile: String,
+    model_code: String,
+    short_sale_slot: i32,
+    designated_location: String,
+    exempt_code: i32,
+    oca_type: i32,
+    rule80a: String,
+    settling_firm: String,
+    all_or_none: bool,
+    min_qty: i32,
+    percent_offset: f64,
+    e_trade_only: bool,
+    firm_quote_only: bool,
+    nbbo_price_cap: f64,
+    auction_strategy: AuctionStrategy,
+    starting_price: f64,
+    stock_ref_price: f64,
+    delta: f64, // type: float
+    stock_range_lower: f64,
+    stock_range_upper: f64, // type: float
+    override_percentage_constraints: bool,
+    volat: VolatilityOrder,
+    continuous_update: bool,
+    reference_price_type: i32, // type: int; 1=Average, 2 = BidOrAsk
+    trail_stop_price: f64,
+    trailing_percent: f64, // type: float; TRAILLIMIT orders only
+    scale_init_level_size: i32,
+    scale_subs_level_size: i32,
+    scale_price_increment: f64,
+    scale_price_adjust_value: f64,
+    scale_price_adjust_interval: i32,
+    scale_profit_offset: f64,
+    scale_auto_reset: bool,
+    scale_init_position: i32,
+    scale_init_fill_qty: i32,
+    scale_random_percent: bool,
+    scale_table: String,
+    active_start_time: String,
+    active_stop_time: String,
+    hedge_type: String,
+    hedge_param: String, // 'beta=X' value for beta hedge, 'ratio=Y' for pair hedge
+    opt_out_smart_routing: bool,
+    clearing_account: String,
+    clearing_intent: String, // "" (Default), "IB", "Away", "PTA" (PostTrade)
+    not_held: bool,
+    delta_neutral_contract: Option<DeltaNeutralContract>,
+    algo_strategy: String,
+    algo_params: Vec<TagValue>,
+    algo_id: String,
+    what_if: bool,
+    misc_options: Vec<TagValue>, // TagValueList
+    solicited: bool,
+    randomize_size: bool,
+    randomize_price: bool,
+    reference_contract_id: i32,
+    is_pegged_change_amount_decrease: bool,
+    pegged_change_amount: f64,
+    reference_change_amount: f64,
+    reference_exchange_id: String,
+    conditions: Vec<OrderConditionEnum>,
+    conditions_ignore_rth: bool,
+    conditions_cancel_order: bool,
+    adjusted_order_type: String,
+    trigger_price: f64,
+    lmt_price_offset: f64,
+    adjusted_stop_price: f64,
+    adjusted_stop_limit_price: f64,
+    adjusted_trailing_amount: f64,
+    adjustable_trailing_unit: i32,
+    ext_operator: String,
+    soft_dollar_tier: SoftDollarTier,
+    cash_qty: f64,
+    mifid2decision_maker: String,
+    mifid2decision_algo: String,
+    mifid2execution_trader: String,
+    mifid2execution_algo: String,
+    dont_use_auto_price_for_hedge: bool,
+    is_oms_container: bool,
+    discretionary_up_to_limit_price: bool,
+    use_price_mgmt_algo: bool,
+}
+
+#[derive(Clone, Deserialize, EnumDiscriminants, Debug, Display)]
 #[strum_discriminants(derive(FromPrimitive, EnumString, EnumVariantNames))]
 pub enum ServerReqMsg {
     ReqMktData {
         version: i32,
         req_id: i32,
-        contract: Contract,
-        generic_tick_list: String,
-        snapshot: bool,
-        regulatory_snapshot: bool,
-        mkt_data_options: String, // internal use only, serialize as empty string field
+        // custom Deserialize needed
+        payload: ReqMktDataFields,
     },
     CancelMktData {
         version: i32,
@@ -459,8 +569,8 @@ pub enum ServerReqMsg {
     PlaceOrder {
         version: i32,
         order_id: i32,
-        contract: Contract,
-        order: Order,
+        // custom Deserialize needed
+        payload: PlaceOrderFields,
     },
     CancelOrder {
         version: i32,
@@ -486,12 +596,17 @@ pub enum ServerReqMsg {
     ReqContractData {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
+        sec_id_type: String,
+        sec_id: String,
     },
     ReqMktDepth {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
         num_rows: i32,
         is_smart_depth: bool,
         mkt_depth_options: String,
@@ -501,9 +616,17 @@ pub enum ServerReqMsg {
         req_id: i32,
         is_smart_depth: bool,
     },
-    ReqNewsBulletins,
-    CancelNewsBulletins,
-    SetServerLoglevel,
+    ReqNewsBulletins {
+        version: i32,
+        all_msgs: bool,
+    },
+    CancelNewsBulletins {
+        version: i32,
+    },
+    SetServerLoglevel {
+        version: i32,
+        log_level: i32,
+    },
     ReqAutoOpenOrders {
         version: i32,
         auto_bind: bool,
@@ -526,14 +649,17 @@ pub enum ServerReqMsg {
     ReqHistoricalData {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
         keep_up_to_date: bool,
         chart_options: String,
     },
     ExerciseOptions {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
         exercise_action: i32,
         exercise_quantity: i32,
         account: String,
@@ -563,7 +689,8 @@ pub enum ServerReqMsg {
     ReqRealTimeBars {
         version: i32,
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
         bar_size: i32,
         what_to_show: String,
         use_rth: bool,
@@ -576,7 +703,7 @@ pub enum ServerReqMsg {
     ReqFundamentalData {
         version: i32,
         req_id: i32,
-        contract: Contract, // abreviated contract field
+        contract: ContractPreamble,
         report_type: String,
         tags_value_count: i32,
         fund_data_opt: String,
@@ -585,38 +712,146 @@ pub enum ServerReqMsg {
         version: i32,
         req_id: i32,
     },
-    ReqCalcImpliedVolat,
-    ReqCalcOptionPrice,
-    CancelCalcImpliedVolat,
-    CancelCalcOptionPrice,
+    ReqCalcImpliedVolat {
+        version: i32,
+        req_id: i32,
+        contract: ContractPreamble, // abreviated contract field
+        trading_class: String,
+        option_price: f64,
+        under_price: f64,
+        tag_values_cnt: usize,
+        impl_vol_opt: String,
+    },
+    ReqCalcOptionPrice {
+        version: i32,
+        req_id: i32,
+        contract: ContractPreamble, // abreviated contract field
+        trading_class: String,
+        volatility: f64,
+        under_price: f64,
+        tag_values_cnt: usize,
+        opt_prc_opt: String,
+    },
+    CancelCalcImpliedVolat {
+        version: i32,
+        req_id: i32,
+    },
+    CancelCalcOptionPrice {
+        version: i32,
+        req_id: i32,
+    },
     ReqGlobalCancel {
         version: i32,
     },
-    ReqMarketDataType,
-    ReqPositions,
-    ReqAccountSummary,
-    CancelAccountSummary,
-    CancelPositions,
-    VerifyRequest,
-    VerifyMessage ,
-    QueryDisplayGroups ,
-    SubscribeToGroupEvents ,
-    UpdateDisplayGroup ,
-    UnsubscribeFromGroupEvents ,
-    StartApi ,
-    VerifyAndAuthRequest ,
-    VerifyAndAuthMessage ,
-    ReqPositionsMulti ,
-    CancelPositionsMulti ,
-    ReqAccountUpdatesMulti ,
-    CancelAccountUpdatesMulti ,
-    ReqSecDefOptParams ,
-    ReqSoftDollarTiers ,
+    ReqMarketDataType {
+        version: i32,
+        market_data_type: i32,
+    },
+    ReqPositions {
+        version: i32,
+    },
+    ReqAccountSummary {
+        version: i32,
+        req_id: i32,
+        group_name: String,
+        tags: String,
+    },
+    CancelAccountSummary {
+        version: i32,
+        req_id: i32,
+    },
+    CancelPositions {
+        version: i32,
+    },
+    VerifyRequest {
+        version: i32,
+        api_name: String,
+        api_version: String,
+    },
+    VerifyMessage {
+        version: i32,
+        api_data: String,
+    },
+    QueryDisplayGroups {
+        version: i32,
+        req_id: i32,
+    },
+    SubscribeToGroupEvents {
+        version: i32,
+        req_id: i32,
+        group_id: i32,
+    },
+    UpdateDisplayGroup {
+        version: i32,
+        req_id: i32,
+        contract_info: String,
+    },
+    UnsubscribeFromGroupEvents {
+        version: i32,
+        req_id: i32,
+    },
+    StartApi {
+        version: i32,
+        client_id: String,
+    },
+    VerifyAndAuthRequest {
+        version: i32,
+        api_name: String,
+        api_version: String,
+        opaque_isv_key: String,
+    },
+    VerifyAndAuthMessage {
+        version: i32,
+        api_data: String,
+        xyz_response: String,
+    },
+    ReqPositionsMulti {
+        version: i32,
+        req_id: i32,
+        account: String,
+        model_code: String,
+    },
+    CancelPositionsMulti {
+        version: i32,
+        req_id: i32,
+    },
+    ReqAccountUpdatesMulti {
+        version: i32,
+        req_id: i32,
+        account: String,
+        model_code: String,
+        ledger_and_nlv: bool,
+    },
+    CancelAccountUpdatesMulti {
+        version: i32,
+        req_id: i32,
+    },
+    ReqSecDefOptParams {
+        req_id: i32,
+        underlying_symbol: String,
+        fut_fop_exchange: String,
+        underlying_sec_type: String,
+        underlying_con_id: i32,
+    },
+    ReqSoftDollarTiers {
+        req_id: i32,
+    },
     ReqFamilyCodes ,
-    ReqMatchingSymbols ,
+    ReqMatchingSymbols {
+        req_id: i32,
+        pattern: String,
+    },
     ReqMktDepthExchanges ,
-    ReqSmartComponents ,
-    ReqNewsArticle ,
+    ReqSmartComponents {
+        req_id: i32,
+        bbo_exchange: String,
+    },
+    ReqNewsArticle {
+        req_id: i32,
+        provider_code: String,
+        article_id: String,
+        news_article_options: String,
+    },
     ReqNewsProviders ,
     ReqHistoricalNews {
         req_id: i32,
@@ -629,14 +864,18 @@ pub enum ServerReqMsg {
     },
     ReqHeadTimestamp {
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
         use_rth: i32,
         what_to_show: String,
         format_date: i32,
     },
     ReqHistogramData {
         ticker_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
         use_rth: bool,
         time_period: String,
     },
@@ -668,7 +907,9 @@ pub enum ServerReqMsg {
     },
     ReqHistoricalTicks {
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        include_expired: bool,
         start_date_time: String,
         end_date_time: String,
         number_of_ticks: i32,
@@ -679,7 +920,9 @@ pub enum ServerReqMsg {
     },
     ReqTickByTickData {
         req_id: i32,
-        contract: Contract,
+        contract: ContractPreamble,
+        trading_class: String,
+        tick_type: String,
         number_of_ticks: i32,
         ignore_size: bool,
     },

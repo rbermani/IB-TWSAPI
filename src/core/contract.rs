@@ -39,6 +39,15 @@ impl Default for PositionType {
 
 //==================================================================================================
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ComboLegPreamble {
+    pub con_id: i32,
+    pub ratio: f64,
+    pub action: String,
+    // BUY /SELL / SSHORT
+    pub exchange: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ComboLeg {
     pub con_id: i32,
     pub ratio: f64,
@@ -126,6 +135,22 @@ impl Display for DeltaNeutralContract {
             self.con_id, self.delta, self.price,
         )
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ContractPreamble {
+    con_id: i32,
+    symbol: String,
+    sec_type: String,
+    last_trade_date_or_contract_month: String,
+    strike: f64,
+    right: String,
+    multiplier: String,
+    exchange: String,
+    primary_exchange: String,
+    // pick an actual (ie non - aggregate) exchange that the contract trades on. DO NOT SET TO SMART.
+    currency: String,
+    local_symbol: String,
 }
 
 //==================================================================================================
