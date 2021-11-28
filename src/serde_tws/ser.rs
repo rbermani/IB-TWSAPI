@@ -76,8 +76,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
     fn serialize_i32(self, v: i32) -> Result<()> {
         let mut out = "".to_owned();
-        let val = (v as i32).to_string();
+
         if UNSET_INTEGER != v {
+           let val = (v as i32).to_string();
            out.push_str(&val);
         }
         self.serialize_str(&out)
@@ -88,8 +89,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_f64(self, v: f64) -> Result<()> {
         let mut out = "".to_owned();
-        let val = v.to_string();
+
         if UNSET_DOUBLE != v {
+            let val = v.to_string();
             out.push_str(&val);
         }
         self.serialize_str(&out)
@@ -263,7 +265,7 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_key<T>(&mut self, key: &T) -> Result<()>
+    fn serialize_key<T>(&mut self, _key: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -324,7 +326,7 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -343,7 +345,7 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {

@@ -366,9 +366,12 @@ pub struct OrderMain {
     pub open_close: String,
     // O=Open, C=Close
     pub origin: Origin,
-
     // 1 = CANCEL_WITH_BLOCK, 2 = REDUCE_WITH_BLOCK, 3 = REDUCE_NON_BLOCK
     pub order_ref: String,
+// permid
+//outside_rth
+//hidden
+//discretionary_amt
     pub transmit: bool,
     // if false, order will be created but not transmited
     pub parent_id: i32,

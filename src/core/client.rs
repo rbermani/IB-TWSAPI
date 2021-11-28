@@ -2292,16 +2292,16 @@ impl EClient {
         }
 
         let version = 1;
-        let mut_req_id = req_id;
-        let mut_account = account;
-        let mut_model_code = model_code;
+        let req_id = req_id;
+        let account = account;
+        let model_code = model_code;
         let message_id: i32 = ServerReqMsgDiscriminants::ReqPositionsMulti as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
-        msg.push_str(&make_field(&mut_req_id)?);
-        msg.push_str(&make_field(&String::from(mut_account))?);
-        msg.push_str(&make_field(&String::from(mut_model_code))?);
+        msg.push_str(&make_field(&req_id)?);
+        msg.push_str(&make_field(&String::from(account))?);
+        msg.push_str(&make_field(&String::from(model_code))?);
 
         self.send_request(msg.as_str())?;
 
@@ -2331,12 +2331,12 @@ impl EClient {
         }
 
         let version = 1;
-        let mut_req_id = req_id;
+        let req_id = req_id;
         let message_id: i32 = ServerReqMsgDiscriminants::CancelPositionsMulti as i32;
         let mut msg = "".to_string();
         msg.push_str(&make_field(&message_id)?);
         msg.push_str(&make_field(&version)?);
-        msg.push_str(&make_field(&mut_req_id)?);
+        msg.push_str(&make_field(&req_id)?);
 
         self.send_request(msg.as_str())?;
         Ok(())
