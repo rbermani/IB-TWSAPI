@@ -59,5 +59,4 @@
 //! ```     
 pub mod core;
 pub mod examples;
-pub mod serde_tws;
 mod tests;

@@ -23,7 +23,7 @@ use crate::core::contract::{Contract, ContractDescription, ContractPreamble, Con
 use crate::core::errors::IBKRApiLibError;
 use crate::core::execution::{Execution,ExecutionFilter};
 use crate::core::scanner::ScannerSubscription;
-use crate::core::order::{Order, OrderMain, OrderState, SoftDollarTier};
+use crate::core::order::{Order, OrderState, SoftDollarTier};
 use serde::Deserialize;
 use serde::Serialize;
 use strum::{VariantNames, EnumMessage};
@@ -466,7 +466,7 @@ pub enum ServerReqMsg {
         trading_class: String,
         sec_id_type: String,
         sec_id: String,
-        order: OrderMain,
+        order: Order,
     },
     CancelOrder {
         version: i32,
