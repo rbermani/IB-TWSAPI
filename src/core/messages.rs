@@ -1,4 +1,5 @@
 //! Functions for processing messages
+use std::fmt::{Display, Error, Formatter};
 use std::any::Any;
 use std::collections::HashSet;
 use std::convert::TryInto;
@@ -25,8 +26,9 @@ use crate::core::execution::{Execution,ExecutionFilter};
 use crate::core::scanner::ScannerSubscription;
 use crate::core::order::{AuctionStrategy, VolatilityOrder, Order, OrderComboLeg, OrderPreamble, OrderState, SoftDollarTier};
 use crate::core::order_condition::{OrderConditionEnum};
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde::ser::{Serializer, SerializeStruct};
+use serde::de::{self, Deserializer, Visitor, SeqAccess};
 use strum::{VariantNames, EnumMessage};
 use strum_macros::Display;
 use strum_macros::{EnumDiscriminants, EnumIter, EnumMessage, EnumString, EnumVariantNames};
@@ -441,7 +443,7 @@ pub enum ServerRspMsg {
     },
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Debug)]
 pub struct ReqMktDataFields {
     contract: ContractPreamble,
     trading_class: String,
@@ -451,6 +453,84 @@ pub struct ReqMktDataFields {
     snapshot: bool,
     regulatory_snapshot: bool,
     mkt_data_options: String, // internal use only, serialize as empty string field
+}
+
+impl<'de> serde::de::Deserialize<'de> for ReqMktDataFields {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ReqMktDataFieldsVisitor;
+
+        impl<'de> Visitor<'de> for ReqMktDataFieldsVisitor {
+            type Value = ReqMktDataFields;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("struct ReqMktDataFields")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<ReqMktDataFields, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let mut combo_legs = vec![];
+                let contract: ContractPreamble = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let trading_class = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+
+                if contract.sec_type == "BAG" {
+                    combo_legs = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                }
+                let delta_neutral_contract_included: bool = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                
+                let delta_neutral_contract = {
+                    if delta_neutral_contract_included {
+                        Some(seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?)
+                    } else {
+                        None
+                    }
+                };
+
+                let generic_tick_list = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(5, &self))?;
+
+                let snapshot = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(6, &self))?;
+
+                let regulatory_snapshot = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(7, &self))?;
+                let mkt_data_options = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(8, &self))?;
+
+                Ok(ReqMktDataFields {
+                    contract,
+                    trading_class,
+                    combo_legs,
+                    delta_neutral_contract,
+                    generic_tick_list,
+                    snapshot,
+                    regulatory_snapshot,
+                    mkt_data_options,
+                })
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &[
+                "contract",
+                "trading_class",
+                "combo_legs",
+                "delta_neutral_contract",
+                "generic_tick_list",
+                "snapshot",
+                "regulatory_snapshot",
+                "mkt_data_options",
+                ];
+        deserializer.deserialize_struct("ReqMktDataFields", FIELDS, ReqMktDataFieldsVisitor)
+    }
 }
 
 #[derive(Clone, Deserialize, Debug)]
