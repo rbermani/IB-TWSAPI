@@ -4,7 +4,7 @@ use std::fmt::{Display, Error, Formatter};
 use num_derive::FromPrimitive;
 
 use crate::core::common::{TagValue, UNSET_DOUBLE, UNSET_INTEGER};
-use crate::core::contract::{ComboLeg, DeltaNeutralContract};
+
 use crate::core::order::AuctionStrategy::AuctionUnset;
 use crate::core::order::Origin::Customer;
 use crate::core::order_condition::{Condition, OrderConditionEnum};

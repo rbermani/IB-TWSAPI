@@ -17,8 +17,7 @@ use num_derive::FromPrimitive;
 use crate::core::common::{
     BarData, CommissionReport, DepthMktDataDescription, FaDataType, FamilyCode, HistogramData,
     HistoricalTick, HistoricalTickBidAsk, HistoricalTickLast, NewsProvider, PriceIncrement,
-    RealTimeBar, SmartComponent, TagValue, TickAttrib,
-    TickByTickType, TickMsgType, TickType, UNSET_DOUBLE, UNSET_INTEGER,
+    RealTimeBar, SmartComponent, TagValue, TickAttrib, TickMsgType, TickType, UNSET_DOUBLE, UNSET_INTEGER,
 };
 use crate::core::contract::{
     ComboLeg, ComboLegPreamble, Contract, ContractDescription, ContractDetails, ContractPreamble,
@@ -33,11 +32,11 @@ use crate::core::order::{
 use crate::core::order_condition::OrderConditionEnum;
 use crate::core::scanner::ScannerSubscription;
 use serde::de::{self, Deserializer, SeqAccess, Visitor};
-use serde::ser::{SerializeStruct, Serializer};
+
 use serde::{Deserialize, Serialize};
-use strum::{EnumMessage, VariantNames};
+
 use strum_macros::Display;
-use strum_macros::{EnumDiscriminants, EnumIter, EnumMessage, EnumString, EnumVariantNames};
+use strum_macros::{EnumDiscriminants, EnumString, EnumVariantNames};
 
 //==================================================================================================
 trait EClientMsgSink {
@@ -661,9 +660,6 @@ impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
                 let mut contract_combo_legs: Vec<ComboLeg> = vec![];
                 let mut order_combo_legs: Vec<OrderComboLeg> = vec![];
                 let mut smart_combo_routing_params: Vec<TagValue> = vec![];
-                let mut combo_legs_count = 0;
-                let mut order_combo_legs_count = 0;
-                let mut smart_combo_routing_params_count = 0;
 
                 let contract: ContractPreamble = seq
                     .next_element()?
@@ -905,26 +901,26 @@ impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
                 let randomize_price = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(70, &self))?;
-                let reference_contract_id = UNSET_INTEGER;
-                let is_pegged_change_amount_decrease = false;
-                let pegged_change_amount = UNSET_DOUBLE;
-                let reference_change_amount = UNSET_DOUBLE;
-                let reference_exchange_id = "".to_string();
+                let mut reference_contract_id = UNSET_INTEGER;
+                let mut is_pegged_change_amount_decrease = false;
+                let mut pegged_change_amount = UNSET_DOUBLE;
+                let mut reference_change_amount = UNSET_DOUBLE;
+                let mut reference_exchange_id = "".to_string();
 
                 if ord_hdr.order_type == "PEG BENCH" {
-                    let reference_contract_id = seq
+                    reference_contract_id = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                    let is_pegged_change_amount_decrease = seq
+                    is_pegged_change_amount_decrease = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                    let pegged_change_amount = seq
+                    pegged_change_amount = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                    let reference_change_amount = seq
+                    reference_change_amount = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                    let reference_exchange_id = seq
+                    reference_exchange_id = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(4, &self))?;
                 }
@@ -933,7 +929,7 @@ impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
                     .ok_or_else(|| de::Error::invalid_length(4, &self))?;
                 let mut conditions_ignore_rth = false;
                 let mut conditions_cancel_order = false;
-                if (conditions.len() > 0) {
+                if conditions.len() > 0 {
                     conditions_ignore_rth = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(4, &self))?;

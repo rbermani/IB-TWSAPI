@@ -1,8 +1,8 @@
 //! Serde IB TWS Server data type deserialization
-use crate::core::messages::{ServerRspMsg, ServerRspMsgDiscriminants};
+
 use crate::serde_tws::error::*;
 use std::convert::TryInto;
-use std::fmt;
+
 use std::iter::Peekable;
 //use std::slice::Iter;
 //use std::iter::IntoIterator;
@@ -12,13 +12,6 @@ use serde::de::{
     SeqAccess, VariantAccess, Visitor,
 };
 use serde::Deserialize;
-use std::marker::PhantomData;
-use std::ops::{AddAssign, MulAssign, Neg};
-use strum::VariantNames;
-
-fn print_type_of<T>(_: &T) {
-    println!("{}", std::any::type_name::<T>())
-}
 
 pub fn from_str<'a, T>(s: &'a str) -> Result<T>
 where
@@ -38,7 +31,7 @@ impl<'de> Deserializer<'de> {
     pub fn from_str(input: &'de str) -> Self {
         let bytes = input.as_bytes();
         let payload_len = i32::from_be_bytes(bytes[0..4].try_into().unwrap()) as usize;
-        let mut fields: Vec<&str> = input[4..].split('\0').collect();
+        let fields: Vec<&str> = input[4..].split('\0').collect();
         let field_iter = fields.into_iter().peekable();
         let veclen = 0;
         Deserializer {
@@ -54,15 +47,6 @@ impl<'de> Deserializer<'de> {
         T: Deserialize<'de>,
     {
         T::deserialize(&mut self)
-    }
-}
-
-impl<'de> Deserializer<'de> {
-    fn expect_end(&mut self) -> Result<()> {
-        match self.field_iter.next() {
-            None => Ok(()),
-            Some(s) => Err(Error::TrailingBytes),
-        }
     }
 }
 
@@ -308,7 +292,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_enum(Enum::new(self, msg_id_idx as u8))
     }
 
-    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_identifier<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
