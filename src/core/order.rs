@@ -3,13 +3,14 @@ use std::fmt::{Display, Error, Formatter};
 
 use num_derive::FromPrimitive;
 
-use serde::{Deserialize, Serialize};
-use serde::ser::{Serializer, SerializeStruct};
-use serde::de::{self, Deserializer, Visitor, SeqAccess};
 use crate::core::common::{TagValue, UNSET_DOUBLE, UNSET_INTEGER};
+use crate::core::contract::{ComboLeg, DeltaNeutralContract};
 use crate::core::order::AuctionStrategy::AuctionUnset;
 use crate::core::order::Origin::Customer;
 use crate::core::order_condition::{Condition, OrderConditionEnum};
+use serde::de::{self, Deserializer, SeqAccess, Visitor};
+use serde::ser::{SerializeStruct, Serializer};
+use serde::{Deserialize, Serialize};
 
 //==================================================================================================
 #[repr(i32)]
@@ -228,8 +229,7 @@ pub struct VolatilityOrder {
 }
 
 impl serde::ser::Serialize for VolatilityOrder {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         // 12 is the number of fields in the struct.
         let mut state = serializer.serialize_struct("VolatilityOrder", 12)?;
         state.serialize_field("volatility", &self.volatility)?;
@@ -239,13 +239,28 @@ impl serde::ser::Serialize for VolatilityOrder {
 
         if !self.delta_neutral_order_type.is_empty() {
             state.serialize_field("delta_neutral_con_id", &self.delta_neutral_con_id)?;
-            state.serialize_field("delta_neutral_settling_firm", &self.delta_neutral_settling_firm)?;
-            state.serialize_field("delta_neutral_clearing_account", &self.delta_neutral_clearing_account)?;
-            state.serialize_field("delta_neutral_clearing_intent", &self.delta_neutral_clearing_intent)?;
+            state.serialize_field(
+                "delta_neutral_settling_firm",
+                &self.delta_neutral_settling_firm,
+            )?;
+            state.serialize_field(
+                "delta_neutral_clearing_account",
+                &self.delta_neutral_clearing_account,
+            )?;
+            state.serialize_field(
+                "delta_neutral_clearing_intent",
+                &self.delta_neutral_clearing_intent,
+            )?;
             state.serialize_field("delta_neutral_open_close", &self.delta_neutral_open_close)?;
             state.serialize_field("delta_neutral_short_sale", &self.delta_neutral_short_sale)?;
-            state.serialize_field("delta_neutral_short_sale_slot", &self.delta_neutral_short_sale_slot)?;
-            state.serialize_field("delta_neutral_designated_location", &self.delta_neutral_designated_location)?;
+            state.serialize_field(
+                "delta_neutral_short_sale_slot",
+                &self.delta_neutral_short_sale_slot,
+            )?;
+            state.serialize_field(
+                "delta_neutral_designated_location",
+                &self.delta_neutral_designated_location,
+            )?;
         } else {
             state.skip_field("delta_neutral_con_id")?;
             state.skip_field("delta_neutral_settling_firm")?;
@@ -254,7 +269,7 @@ impl serde::ser::Serialize for VolatilityOrder {
             state.skip_field("delta_neutral_open_close")?;
             state.skip_field("delta_neutral_short_sale")?;
             state.skip_field("delta_neutral_short_sale_slot")?;
-            state.skip_field("delta_neutral_designated_location")?;            
+            state.skip_field("delta_neutral_designated_location")?;
         }
 
         state.end()
@@ -279,13 +294,17 @@ impl<'de> serde::de::Deserialize<'de> for VolatilityOrder {
             where
                 V: SeqAccess<'de>,
             {
-                let volatility = seq.next_element()?
+                let volatility = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                let volatility_type = seq.next_element()?
+                let volatility_type = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-                let delta_neutral_order_type: String = seq.next_element()?
+                let delta_neutral_order_type: String = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(2, &self))?;
-                let delta_neutral_aux_price = seq.next_element()?
+                let delta_neutral_aux_price = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(3, &self))?;
 
                 let mut delta_neutral_con_id = 0;
@@ -298,25 +317,34 @@ impl<'de> serde::de::Deserialize<'de> for VolatilityOrder {
                 let mut delta_neutral_designated_location = "".to_string();
 
                 if !delta_neutral_order_type.is_empty() {
-                    delta_neutral_con_id = seq.next_element()?
+                    delta_neutral_con_id = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                    delta_neutral_settling_firm = seq.next_element()?
+                    delta_neutral_settling_firm = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(5, &self))?;
-                    delta_neutral_clearing_account = seq.next_element()?
+                    delta_neutral_clearing_account = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(6, &self))?;
-                    delta_neutral_clearing_intent = seq.next_element()?
+                    delta_neutral_clearing_intent = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(7, &self))?;
-                    delta_neutral_open_close = seq.next_element()?
+                    delta_neutral_open_close = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(8, &self))?;
-                    delta_neutral_short_sale = seq.next_element()?
+                    delta_neutral_short_sale = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(9, &self))?;
-                    delta_neutral_short_sale_slot = seq.next_element()?
+                    delta_neutral_short_sale_slot = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(10, &self))?;
-                    delta_neutral_designated_location = seq.next_element()?
+                    delta_neutral_designated_location = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(11, &self))?;
                 }
 
-                Ok(VolatilityOrder {volatility,
+                Ok(VolatilityOrder {
+                    volatility,
                     volatility_type,
                     delta_neutral_order_type,
                     delta_neutral_aux_price,
@@ -328,29 +356,30 @@ impl<'de> serde::de::Deserialize<'de> for VolatilityOrder {
                     delta_neutral_short_sale,
                     delta_neutral_short_sale_slot,
                     delta_neutral_designated_location,
-                    })
+                })
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["volatility",
-                    "volatility_type",
-                    "delta_neutral_order_type",
-                    "delta_neutral_aux_price",
-                    "delta_neutral_con_id",
-                    "delta_neutral_settling_firm",
-                    "delta_neutral_clearing_account",
-                    "delta_neutral_clearing_intent",
-                    "delta_neutral_open_close",
-                    "delta_neutral_short_sale",
-                    "delta_neutral_short_sale_slot",
-                    "delta_neutral_designated_location",
-                    ];
+        const FIELDS: &'static [&'static str] = &[
+            "volatility",
+            "volatility_type",
+            "delta_neutral_order_type",
+            "delta_neutral_aux_price",
+            "delta_neutral_con_id",
+            "delta_neutral_settling_firm",
+            "delta_neutral_clearing_account",
+            "delta_neutral_clearing_intent",
+            "delta_neutral_open_close",
+            "delta_neutral_short_sale",
+            "delta_neutral_short_sale_slot",
+            "delta_neutral_designated_location",
+        ];
         deserializer.deserialize_struct("VolatilityOrder", FIELDS, VolatilityOrderVisitor)
     }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct OrderPreamble {
+pub struct PlaceOrderPreamble {
     // main order fields
     pub action: String,
     pub total_quantity: f64,
@@ -385,7 +414,6 @@ pub struct OrderPreamble {
 //==================================================================================================
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Order {
-
     // order identifier
     pub order_id: i32,
 
@@ -491,7 +519,6 @@ pub struct Order {
     // type: float
     pub trailing_percent: f64, // type: float; TRAILLIMIT orders only
 
-
     // type: float
     pub opt_out_smart_routing: bool,
 
@@ -531,7 +558,6 @@ pub struct Order {
     pub hedge_param: String, // 'beta=X' value for beta hedge, 'ratio=Y' for pair hedge
 
     // IB account
-
     pub clearing_account: String,
     //True beneficiary of the order
     pub clearing_intent: String, // "" (Default), "IB", "Away", "PTA" (PostTrade)

@@ -1,8 +1,10 @@
 //! Types related to Contracts
+use num_derive::FromPrimitive;
+use serde::de::{self, Deserializer, SeqAccess, Visitor};
+use serde::ser::{SerializeStruct, Serializer};
+use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Error, Formatter};
 
-use num_derive::FromPrimitive;
-use serde::{Deserialize, Serialize};
 // 0.2.6 (the trait)
 
 use crate::core::common::TagValue;
@@ -136,7 +138,53 @@ impl Display for DeltaNeutralContract {
         )
     }
 }
+/*
+impl<'de, T> serde::de::Deserialize<'de> for std::option::Option<T> {
+    where T: Deserialize,
 
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OptionVisitor;
+
+        impl<'de> Visitor<'de> for OptionVisitor {
+            type Value = OptionalDeltaNeutralContract;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("Option")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<OptionalDeltaNeutralContract, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let delta_neutral_contract_included: bool = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+
+                if delta_neutral_contract_included {
+
+                    let con_id = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                    let delta = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                    let price = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                    Ok(OptionalDeltaNeutralContract (Some(DeltaNeutralContract{con_id, delta, price})))
+
+                } else {
+                    Ok(OptionalDeltaNeutralContract (None))
+                }
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &[
+                "deltaneutralcontract",
+                ];
+        deserializer.deserialize_struct("OptionalDeltaNeutralContract", FIELDS, OptionalDeltaNeutralContractVisitor)
+    }
+}
+*/
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ContractPreamble {
     pub con_id: i32,

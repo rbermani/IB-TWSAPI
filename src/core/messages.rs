@@ -1,8 +1,8 @@
 //! Functions for processing messages
-use std::fmt::{Display, Error, Formatter};
 use std::any::Any;
 use std::collections::HashSet;
 use std::convert::TryInto;
+use std::fmt::{Display, Error, Formatter};
 use std::io::Write;
 use std::string::String;
 use std::vec::Vec;
@@ -17,19 +17,25 @@ use num_derive::FromPrimitive;
 use crate::core::common::{
     BarData, CommissionReport, DepthMktDataDescription, FaDataType, FamilyCode, HistogramData,
     HistoricalTick, HistoricalTickBidAsk, HistoricalTickLast, NewsProvider, PriceIncrement,
-    RealTimeBar, SmartComponent, TickAttrib, TickAttribBidAsk, TickAttribLast, TickByTickType,
-    TickMsgType, TickType, TagValue, UNSET_DOUBLE, UNSET_INTEGER,
+    RealTimeBar, SmartComponent, TagValue, TickAttrib, TickAttribBidAsk, TickAttribLast,
+    TickByTickType, TickMsgType, TickType, UNSET_DOUBLE, UNSET_INTEGER,
 };
-use crate::core::contract::{Contract, ContractDescription, ComboLeg, ComboLegPreamble, ContractPreamble, ContractDetails, DeltaNeutralContract};
+use crate::core::contract::{
+    ComboLeg, ComboLegPreamble, Contract, ContractDescription, ContractDetails, ContractPreamble,
+    DeltaNeutralContract,
+};
 use crate::core::errors::IBKRApiLibError;
-use crate::core::execution::{Execution,ExecutionFilter};
+use crate::core::execution::{Execution, ExecutionFilter};
+use crate::core::order::{
+    AuctionStrategy, Order, OrderComboLeg, OrderState, PlaceOrderPreamble, SoftDollarTier,
+    VolatilityOrder,
+};
+use crate::core::order_condition::OrderConditionEnum;
 use crate::core::scanner::ScannerSubscription;
-use crate::core::order::{AuctionStrategy, VolatilityOrder, Order, OrderComboLeg, OrderPreamble, OrderState, SoftDollarTier};
-use crate::core::order_condition::{OrderConditionEnum};
+use serde::de::{self, Deserializer, SeqAccess, Visitor};
+use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
-use serde::ser::{Serializer, SerializeStruct};
-use serde::de::{self, Deserializer, Visitor, SeqAccess};
-use strum::{VariantNames, EnumMessage};
+use strum::{EnumMessage, VariantNames};
 use strum_macros::Display;
 use strum_macros::{EnumDiscriminants, EnumIter, EnumMessage, EnumString, EnumVariantNames};
 
@@ -447,7 +453,7 @@ pub enum ServerRspMsg {
 pub struct ReqMktDataFields {
     contract: ContractPreamble,
     trading_class: String,
-    combo_legs: Vec<ComboLegPreamble>, 
+    combo_legs: Vec<ComboLegPreamble>,
     delta_neutral_contract: Option<DeltaNeutralContract>,
     generic_tick_list: String,
     snapshot: bool,
@@ -474,36 +480,46 @@ impl<'de> serde::de::Deserialize<'de> for ReqMktDataFields {
                 V: SeqAccess<'de>,
             {
                 let mut combo_legs = vec![];
-                let contract: ContractPreamble = seq.next_element()?
+                let contract: ContractPreamble = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                let trading_class = seq.next_element()?
+                let trading_class = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(1, &self))?;
 
                 if contract.sec_type == "BAG" {
-                    combo_legs = seq.next_element()?
+                    combo_legs = seq
+                        .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(2, &self))?;
                 }
-                let delta_neutral_contract_included: bool = seq.next_element()?
+                let delta_neutral_contract_included: bool = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(3, &self))?;
-                
+
                 let delta_neutral_contract = {
                     if delta_neutral_contract_included {
-                        Some(seq.next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(4, &self))?)
+                        Some(
+                            seq.next_element()?
+                                .ok_or_else(|| de::Error::invalid_length(4, &self))?,
+                        )
                     } else {
                         None
                     }
                 };
 
-                let generic_tick_list = seq.next_element()?
+                let generic_tick_list = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(5, &self))?;
 
-                let snapshot = seq.next_element()?
+                let snapshot = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(6, &self))?;
 
-                let regulatory_snapshot = seq.next_element()?
+                let regulatory_snapshot = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(7, &self))?;
-                let mkt_data_options = seq.next_element()?
+                let mkt_data_options = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(8, &self))?;
 
                 Ok(ReqMktDataFields {
@@ -520,31 +536,30 @@ impl<'de> serde::de::Deserialize<'de> for ReqMktDataFields {
         }
 
         const FIELDS: &'static [&'static str] = &[
-                "contract",
-                "trading_class",
-                "combo_legs",
-                "delta_neutral_contract",
-                "generic_tick_list",
-                "snapshot",
-                "regulatory_snapshot",
-                "mkt_data_options",
-                ];
+            "contract",
+            "trading_class",
+            "combo_legs",
+            "delta_neutral_contract",
+            "generic_tick_list",
+            "snapshot",
+            "regulatory_snapshot",
+            "mkt_data_options",
+        ];
         deserializer.deserialize_struct("ReqMktDataFields", FIELDS, ReqMktDataFieldsVisitor)
     }
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Debug)]
 pub struct PlaceOrderFields {
     contract: ContractPreamble,
     trading_class: String,
     sec_id_type: String,
     sec_id: String,
-    order: OrderPreamble,
+    ord_hdr: PlaceOrderPreamble,
     contract_combo_legs: Vec<ComboLeg>,
     order_combo_legs: Vec<OrderComboLeg>,
-    smart_combo_routing_params_count: usize,
     smart_combo_routing_params: Vec<TagValue>,
-    _shares_alloc_deprecated: i32, // deprecated field, empty string
+    shares_alloc_deprecated: i32, // deprecated field, empty string
     discretionary_amt: f64,
     good_after_time: String,
     good_till_date: String,
@@ -590,8 +605,10 @@ pub struct PlaceOrderFields {
     scale_table: String,
     active_start_time: String,
     active_stop_time: String,
+
     hedge_type: String,
     hedge_param: String, // 'beta=X' value for beta hedge, 'ratio=Y' for pair hedge
+
     opt_out_smart_routing: bool,
     clearing_account: String,
     clearing_intent: String, // "" (Default), "IB", "Away", "PTA" (PostTrade)
@@ -633,13 +650,590 @@ pub struct PlaceOrderFields {
     use_price_mgmt_algo: bool,
 }
 
+impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct PlaceOrderFieldsVisitor;
+
+        impl<'de> Visitor<'de> for PlaceOrderFieldsVisitor {
+            type Value = PlaceOrderFields;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("struct PlaceOrderFields")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<PlaceOrderFields, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let mut contract_combo_legs = vec![];
+                let mut order_combo_legs = vec![];
+                let mut smart_combo_routing_params = vec![];
+                let mut combo_legs_count = 0;
+                let mut order_combo_legs_count = 0;
+                let mut smart_combo_routing_params_count = 0;
+
+                let contract: ContractPreamble = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+
+                let trading_class = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+
+                let sec_id_type = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+
+                let sec_id = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+
+                let ord_hdr = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+
+                if contract.sec_type == "BAG" {
+                    combo_legs_count = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(5, &self))?;
+
+                    if combo_legs_count > 0 {
+                        contract_combo_legs = seq
+                            .next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(6, &self))?;
+                    }
+
+                    order_combo_legs_count = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(7, &self))?;
+
+                    if order_combo_legs_count > 0 {
+                        order_combo_legs = seq
+                            .next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(8, &self))?;
+                    }
+
+                    smart_combo_routing_params_count = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(9, &self))?;
+
+                    if smart_combo_routing_params_count > 0 {
+                        smart_combo_routing_params = seq
+                            .next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(10, &self))?;
+                    }
+                }
+
+                let shares_alloc_deprecated = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(11, &self))?;
+
+                let discretionary_amt = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(12, &self))?;
+
+                let good_after_time = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(13, &self))?;
+
+                let good_till_date = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(14, &self))?;
+
+                let fa_group = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(15, &self))?;
+                let fa_method = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(16, &self))?;
+                let fa_percentage = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(17, &self))?;
+                let fa_profile = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(18, &self))?;
+                let model_code = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(19, &self))?;
+                let short_sale_slot = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(20, &self))?;
+                let designated_location = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(21, &self))?;
+                let exempt_code = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(22, &self))?;
+                let oca_type = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(23, &self))?;
+                let rule80a = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(24, &self))?;
+                let settling_firm = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(25, &self))?;
+                let all_or_none = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(26, &self))?;
+                let min_qty = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(27, &self))?;
+                let percent_offset = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(28, &self))?;
+                let e_trade_only = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(29, &self))?;
+                let firm_quote_only = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(30, &self))?;
+                let nbbo_price_cap = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(31, &self))?;
+                let auction_strategy = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(32, &self))?;
+                let starting_price = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(33, &self))?;
+                let stock_ref_price = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(34, &self))?;
+                let delta = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(35, &self))?;
+                let stock_range_lower = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(36, &self))?;
+                let stock_range_upper = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(37, &self))?;
+                let override_percentage_constraints = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(38, &self))?;
+                let volat = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(39, &self))?;
+                let continuous_update = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(40, &self))?;
+                let reference_price_type = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(41, &self))?;
+                let trail_stop_price = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(42, &self))?;
+                let trailing_percent = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(42, &self))?;
+                let scale_init_level_size = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(43, &self))?;
+                let scale_subs_level_size = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(44, &self))?;
+                let scale_price_increment = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(45, &self))?;
+
+                let mut scale_price_adjust_value = UNSET_DOUBLE;
+                let mut scale_price_adjust_interval = UNSET_INTEGER;
+                let mut scale_profit_offset = UNSET_DOUBLE;
+                let mut scale_auto_reset = false;
+                let mut scale_init_position = UNSET_INTEGER;
+                let mut scale_init_fill_qty = UNSET_INTEGER;
+                let mut scale_random_percent = false;
+
+                if scale_price_increment > 0.0 && scale_price_increment != UNSET_DOUBLE {
+                    scale_price_adjust_value = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(46, &self))?;
+                    scale_price_adjust_interval = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(47, &self))?;
+                    scale_profit_offset = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(48, &self))?;
+                    scale_auto_reset = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(49, &self))?;
+                    scale_init_position = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(50, &self))?;
+                    scale_init_fill_qty = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(51, &self))?;
+                    scale_random_percent = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(52, &self))?;
+                }
+                let scale_table = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(53, &self))?;
+                let active_start_time = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(54, &self))?;
+                let active_stop_time = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(55, &self))?;
+                let hedge_type: String = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(56, &self))?;
+                let mut hedge_param = "".to_string();
+                if !hedge_type.is_empty() {
+                    hedge_param = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(57, &self))?;
+                }
+                let opt_out_smart_routing = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(58, &self))?;
+                let clearing_account = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(59, &self))?;
+                let clearing_intent = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(60, &self))?;
+                let not_held = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(61, &self))?;
+
+                let delta_neutral_contract_present: bool = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(61, &self))?;
+
+                let mut delta_neutral_contract: Option<DeltaNeutralContract> = None;
+                if delta_neutral_contract_present {
+                    delta_neutral_contract = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(62, &self))?;
+                }
+
+                let algo_strategy: String = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(63, &self))?;
+                let mut algo_params: Vec<TagValue> = vec![];
+                if !algo_strategy.is_empty() {
+                    let algo_params_count: usize = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(64, &self))?;
+                    algo_params = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(64, &self))?;
+                }
+                let algo_id = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(65, &self))?;
+                let what_if = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(66, &self))?;
+                let misc_options = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(67, &self))?;
+                let solicited = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(68, &self))?;
+                let randomize_size = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(69, &self))?;
+                let randomize_price = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(70, &self))?;
+                let reference_contract_id = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let is_pegged_change_amount_decrease = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let pegged_change_amount = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let reference_change_amount = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let reference_exchange_id = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let conditions = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let conditions_ignore_rth = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let conditions_cancel_order = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let adjusted_order_type = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let trigger_price = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let lmt_price_offset = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let adjusted_stop_price = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let adjusted_stop_limit_price = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let adjusted_trailing_amount = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let adjustable_trailing_unit = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let ext_operator = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let soft_dollar_tier = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let cash_qty = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let mifid2decision_maker = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let mifid2decision_algo = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let mifid2execution_trader = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let mifid2execution_algo = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let dont_use_auto_price_for_hedge = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let is_oms_container = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let discretionary_up_to_limit_price = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let use_price_mgmt_algo = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+
+                Ok(PlaceOrderFields {
+                    contract,
+                    trading_class,
+                    sec_id_type,
+                    sec_id,
+                    ord_hdr,
+                    contract_combo_legs,
+                    order_combo_legs,
+                    smart_combo_routing_params,
+                    shares_alloc_deprecated,
+                    discretionary_amt,
+                    good_after_time,
+                    good_till_date,
+                    fa_group,
+                    fa_method,
+                    fa_percentage,
+                    fa_profile,
+                    model_code,
+                    short_sale_slot,
+                    designated_location,
+                    exempt_code,
+                    oca_type,
+                    rule80a,
+                    settling_firm,
+                    all_or_none,
+                    min_qty,
+                    percent_offset,
+                    e_trade_only,
+                    firm_quote_only,
+                    nbbo_price_cap,
+                    auction_strategy,
+                    starting_price,
+                    stock_ref_price,
+                    delta,
+                    stock_range_lower,
+                    stock_range_upper,
+                    override_percentage_constraints,
+                    volat,
+                    continuous_update,
+                    reference_price_type,
+                    trail_stop_price,
+                    trailing_percent,
+                    scale_init_level_size,
+                    scale_subs_level_size,
+                    scale_price_increment,
+                    scale_price_adjust_value,
+                    scale_price_adjust_interval,
+                    scale_profit_offset,
+                    scale_auto_reset,
+                    scale_init_position,
+                    scale_init_fill_qty,
+                    scale_random_percent,
+                    scale_table,
+                    active_start_time,
+                    active_stop_time,
+
+                    hedge_type,
+                    hedge_param,
+
+                    opt_out_smart_routing,
+                    clearing_account,
+                    clearing_intent,
+                    not_held,
+                    delta_neutral_contract,
+                    algo_strategy,
+                    algo_params,
+                    algo_id,
+                    what_if,
+                    misc_options,
+                    solicited,
+                    randomize_size,
+                    randomize_price,
+                    reference_contract_id,
+                    is_pegged_change_amount_decrease,
+                    pegged_change_amount,
+                    reference_change_amount,
+                    reference_exchange_id,
+                    conditions,
+                    conditions_ignore_rth,
+                    conditions_cancel_order,
+                    adjusted_order_type,
+                    trigger_price,
+                    lmt_price_offset,
+                    adjusted_stop_price,
+                    adjusted_stop_limit_price,
+                    adjusted_trailing_amount,
+                    adjustable_trailing_unit,
+                    ext_operator,
+                    soft_dollar_tier,
+                    cash_qty,
+                    mifid2decision_maker,
+                    mifid2decision_algo,
+                    mifid2execution_trader,
+                    mifid2execution_algo,
+                    dont_use_auto_price_for_hedge,
+                    is_oms_container,
+                    discretionary_up_to_limit_price,
+                    use_price_mgmt_algo,
+                })
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &[
+            "contract",
+            "trading_class",
+            "sec_id_type",
+            "sec_id",
+            "ord_hdr",
+            "combo_legs_count",
+            "contract_combo_legs",
+            "order_combo_legs_count",
+            "order_combo_legs",
+            "smart_combo_routing_params_count",
+            "smart_combo_routing_params",
+            "_shares_alloc_deprecated",
+            "discretionary_amt",
+            "good_after_time",
+            "good_till_date",
+            "fa_group",
+            "fa_method",
+            "fa_percentage",
+            "fa_profile",
+            "model_code",
+            "short_sale_slot",
+            "designated_location",
+            "exempt_code",
+            "oca_type",
+            "rule80a",
+            "settling_firm",
+            "all_or_none",
+            "min_qty",
+            "percent_offset",
+            "e_trade_only",
+            "firm_quote_only",
+            "nbbo_price_cap",
+            "auction_strategy",
+            "starting_price",
+            "stock_ref_price",
+            "delta",
+            "stock_range_lower",
+            "stock_range_upper",
+            "override_percentage_constraints",
+            "volat",
+            "continuous_update",
+            "reference_price_type",
+            "trail_stop_price",
+            "trailing_percent",
+            "scale_init_level_size",
+            "scale_subs_level_size",
+            "scale_price_increment",
+            "scale_price_adjust_value",
+            "scale_price_adjust_interval",
+            "scale_profit_offset",
+            "scale_auto_reset",
+            "scale_init_position",
+            "scale_init_fill_qty",
+            "scale_random_percent",
+            "scale_table",
+            "active_start_time",
+            "active_stop_time",
+            "hedge_type",
+            "hedge_param",
+            "opt_out_smart_routing",
+            "clearing_account",
+            "clearing_intent",
+            "not_held",
+            "delta_neutral_contract",
+            "algo_strategy",
+            "algo_params",
+            "algo_id",
+            "what_if",
+            "misc_options",
+            "solicited",
+            "randomize_size",
+            "randomize_price",
+            "reference_contract_id",
+            "is_pegged_change_amount_decrease",
+            "pegged_change_amount",
+            "reference_change_amount",
+            "reference_exchange_id",
+            "conditions",
+            "conditions_ignore_rth",
+            "conditions_cancel_order",
+            "adjusted_order_type",
+            "trigger_price",
+            "lmt_price_offset",
+            "adjusted_stop_price",
+            "adjusted_stop_limit_price",
+            "adjusted_trailing_amount",
+            "adjustable_trailing_unit",
+            "ext_operator",
+            "soft_dollar_tier",
+            "cash_qty",
+            "mifid2decision_maker",
+            "mifid2decision_algo",
+            "mifid2execution_trader",
+            "mifid2execution_algo",
+            "dont_use_auto_price_for_hedge",
+            "is_oms_container",
+            "discretionary_up_to_limit_price",
+            "use_price_mgmt_algo",
+        ];
+        deserializer.deserialize_struct("PlaceOrderFields", FIELDS, PlaceOrderFieldsVisitor)
+    }
+}
+
 #[derive(Clone, Deserialize, EnumDiscriminants, Debug, Display)]
 #[strum_discriminants(derive(FromPrimitive, EnumString, EnumVariantNames))]
 pub enum ServerReqMsg {
     ReqMktData {
         version: i32,
         req_id: i32,
-        // custom Deserialize needed
         payload: ReqMktDataFields,
     },
     CancelMktData {
@@ -649,7 +1243,6 @@ pub enum ServerReqMsg {
     PlaceOrder {
         version: i32,
         order_id: i32,
-        // custom Deserialize needed
         payload: PlaceOrderFields,
     },
     CancelOrder {
@@ -750,7 +1343,7 @@ pub enum ServerReqMsg {
         req_id: i32,
         subscription: ScannerSubscription,
         scanner_subscription_filter: String,
-        scanner_subscription_options: String,    
+        scanner_subscription_options: String,
     },
     CancelScannerSubscription {
         version: i32,
@@ -916,12 +1509,12 @@ pub enum ServerReqMsg {
     ReqSoftDollarTiers {
         req_id: i32,
     },
-    ReqFamilyCodes ,
+    ReqFamilyCodes,
     ReqMatchingSymbols {
         req_id: i32,
         pattern: String,
     },
-    ReqMktDepthExchanges ,
+    ReqMktDepthExchanges,
     ReqSmartComponents {
         req_id: i32,
         bbo_exchange: String,
@@ -932,7 +1525,7 @@ pub enum ServerReqMsg {
         article_id: String,
         news_article_options: String,
     },
-    ReqNewsProviders ,
+    ReqNewsProviders,
     ReqHistoricalNews {
         req_id: i32,
         con_id: i32,
@@ -1013,7 +1606,6 @@ pub enum ServerReqMsg {
         api_only: bool,
     },
 }
-
 
 //==================================================================================================
 pub fn make_message(msg: &str) -> Result<Vec<u8>, IBKRApiLibError> {

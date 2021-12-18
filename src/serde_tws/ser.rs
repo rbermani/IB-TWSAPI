@@ -1,5 +1,7 @@
+use crate::core::common::{
+    UNSET_DOUBLE, UNSET_INTEGER, UNSET_INTEGER_I32_AS_I64, UNSET_INTEGER_I32_AS_U64,
+};
 use crate::serde_tws::error::*;
-use crate::core::common::{UNSET_INTEGER, UNSET_INTEGER_I32_AS_I64, UNSET_INTEGER_I32_AS_U64, UNSET_DOUBLE};
 use serde::{ser, Serialize};
 use std::str;
 
@@ -78,8 +80,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         let mut out = "".to_owned();
 
         if UNSET_INTEGER != v {
-           let val = (v as i32).to_string();
-           out.push_str(&val);
+            let val = (v as i32).to_string();
+            out.push_str(&val);
         }
         self.serialize_str(&out)
     }
@@ -113,21 +115,21 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_none(self) -> Result<()> {
-        self.serialize_unit()
+        self.serialize_str("0")
     }
 
     fn serialize_some<T>(self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
+        self.serialize_str("1");
         value.serialize(self)
     }
 
     fn serialize_unit(self) -> Result<()> {
-                println!("serialize_unit() not properly implemented!");
+        println!("serialize_unit() not properly implemented!");
 
         self.output += "\0";
-
         self.payload_len += 1;
         Ok(())
     }
