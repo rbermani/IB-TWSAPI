@@ -2,7 +2,7 @@
 use std::any::Any;
 use std::collections::HashSet;
 use std::convert::TryInto;
-use std::fmt::{Display, Error, Formatter};
+use std::fmt::Formatter;
 use std::io::Write;
 use std::string::String;
 use std::vec::Vec;
@@ -17,7 +17,7 @@ use num_derive::FromPrimitive;
 use crate::core::common::{
     BarData, CommissionReport, DepthMktDataDescription, FaDataType, FamilyCode, HistogramData,
     HistoricalTick, HistoricalTickBidAsk, HistoricalTickLast, NewsProvider, PriceIncrement,
-    RealTimeBar, SmartComponent, TagValue, TickAttrib, TickAttribBidAsk, TickAttribLast,
+    RealTimeBar, SmartComponent, TagValue, TickAttrib,
     TickByTickType, TickMsgType, TickType, UNSET_DOUBLE, UNSET_INTEGER,
 };
 use crate::core::contract::{
@@ -492,20 +492,10 @@ impl<'de> serde::de::Deserialize<'de> for ReqMktDataFields {
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(2, &self))?;
                 }
-                let delta_neutral_contract_included: bool = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(3, &self))?;
 
-                let delta_neutral_contract = {
-                    if delta_neutral_contract_included {
-                        Some(
-                            seq.next_element()?
-                                .ok_or_else(|| de::Error::invalid_length(4, &self))?,
-                        )
-                    } else {
-                        None
-                    }
-                };
+                let delta_neutral_contract: Option<DeltaNeutralContract> = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
 
                 let generic_tick_list = seq
                     .next_element()?
@@ -618,7 +608,7 @@ pub struct PlaceOrderFields {
     algo_params: Vec<TagValue>,
     algo_id: String,
     what_if: bool,
-    misc_options: Vec<TagValue>, // TagValueList
+    misc_options: String,
     solicited: bool,
     randomize_size: bool,
     randomize_price: bool,
@@ -668,9 +658,9 @@ impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
             where
                 V: SeqAccess<'de>,
             {
-                let mut contract_combo_legs = vec![];
-                let mut order_combo_legs = vec![];
-                let mut smart_combo_routing_params = vec![];
+                let mut contract_combo_legs: Vec<ComboLeg> = vec![];
+                let mut order_combo_legs: Vec<OrderComboLeg> = vec![];
+                let mut smart_combo_routing_params: Vec<TagValue> = vec![];
                 let mut combo_legs_count = 0;
                 let mut order_combo_legs_count = 0;
                 let mut smart_combo_routing_params_count = 0;
@@ -691,40 +681,22 @@ impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(3, &self))?;
 
-                let ord_hdr = seq
+                let ord_hdr: PlaceOrderPreamble = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(4, &self))?;
 
                 if contract.sec_type == "BAG" {
-                    combo_legs_count = seq
+                    contract_combo_legs = seq
                         .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(5, &self))?;
+                        .ok_or_else(|| de::Error::invalid_length(6, &self))?;
 
-                    if combo_legs_count > 0 {
-                        contract_combo_legs = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(6, &self))?;
-                    }
-
-                    order_combo_legs_count = seq
+                    order_combo_legs = seq
                         .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(7, &self))?;
+                        .ok_or_else(|| de::Error::invalid_length(8, &self))?;
 
-                    if order_combo_legs_count > 0 {
-                        order_combo_legs = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(8, &self))?;
-                    }
-
-                    smart_combo_routing_params_count = seq
+                    smart_combo_routing_params = seq
                         .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(9, &self))?;
-
-                    if smart_combo_routing_params_count > 0 {
-                        smart_combo_routing_params = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::invalid_length(10, &self))?;
-                    }
+                        .ok_or_else(|| de::Error::invalid_length(10, &self))?;
                 }
 
                 let shares_alloc_deprecated = seq
@@ -902,25 +874,15 @@ impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(61, &self))?;
 
-                let delta_neutral_contract_present: bool = seq
+                let delta_neutral_contract: Option<DeltaNeutralContract> = seq
                     .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(61, &self))?;
-
-                let mut delta_neutral_contract: Option<DeltaNeutralContract> = None;
-                if delta_neutral_contract_present {
-                    delta_neutral_contract = seq
-                        .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(62, &self))?;
-                }
+                    .ok_or_else(|| de::Error::invalid_length(62, &self))?;
 
                 let algo_strategy: String = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(63, &self))?;
                 let mut algo_params: Vec<TagValue> = vec![];
                 if !algo_strategy.is_empty() {
-                    let algo_params_count: usize = seq
-                        .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(64, &self))?;
                     algo_params = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(64, &self))?;
@@ -943,30 +905,42 @@ impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
                 let randomize_price = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(70, &self))?;
-                let reference_contract_id = seq
+                let reference_contract_id = UNSET_INTEGER;
+                let is_pegged_change_amount_decrease = false;
+                let pegged_change_amount = UNSET_DOUBLE;
+                let reference_change_amount = UNSET_DOUBLE;
+                let reference_exchange_id = "".to_string();
+
+                if ord_hdr.order_type == "PEG BENCH" {
+                    let reference_contract_id = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                    let is_pegged_change_amount_decrease = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                    let pegged_change_amount = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                    let reference_change_amount = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                    let reference_exchange_id = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                }
+                let conditions: Vec<OrderConditionEnum> = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                let is_pegged_change_amount_decrease = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                let pegged_change_amount = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                let reference_change_amount = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                let reference_exchange_id = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                let conditions = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                let conditions_ignore_rth = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-                let conditions_cancel_order = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                let mut conditions_ignore_rth = false;
+                let mut conditions_cancel_order = false;
+                if (conditions.len() > 0) {
+                    conditions_ignore_rth = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                    conditions_cancel_order = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(4, &self))?;
+                }
                 let adjusted_order_type = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(4, &self))?;
@@ -1130,13 +1104,10 @@ impl<'de> serde::de::Deserialize<'de> for PlaceOrderFields {
             "sec_id_type",
             "sec_id",
             "ord_hdr",
-            "combo_legs_count",
             "contract_combo_legs",
-            "order_combo_legs_count",
             "order_combo_legs",
-            "smart_combo_routing_params_count",
             "smart_combo_routing_params",
-            "_shares_alloc_deprecated",
+            "shares_alloc_deprecated",
             "discretionary_amt",
             "good_after_time",
             "good_till_date",

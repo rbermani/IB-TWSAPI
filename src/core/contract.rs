@@ -1,7 +1,7 @@
 //! Types related to Contracts
 use num_derive::FromPrimitive;
-use serde::de::{self, Deserializer, SeqAccess, Visitor};
-use serde::ser::{SerializeStruct, Serializer};
+//use serde::de::{self, Deserializer, SeqAccess, Visitor};
+//use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Error, Formatter};
 

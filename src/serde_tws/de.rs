@@ -8,8 +8,8 @@ use std::iter::Peekable;
 //use std::iter::IntoIterator;
 //use::alloc_vec::IntoIter;
 use serde::de::{
-    self, value::U8Deserializer, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
-    Visitor,
+    self, value::U8Deserializer, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess,
+    SeqAccess, VariantAccess, Visitor,
 };
 use serde::Deserialize;
 use std::marker::PhantomData;
@@ -404,7 +404,6 @@ impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
     where
         V: DeserializeSeed<'de>,
     {
-
         println!("variant_seed()");
         let de: U8Deserializer<Self::Error> = self.index.into_deserializer();
         let v = seed.deserialize(de)?;
@@ -436,7 +435,6 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
     {
         println!("tuple_variant()");
         de::Deserializer::deserialize_tuple(self.de, len, visitor)
-
     }
 
     fn struct_variant<V>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
