@@ -336,9 +336,8 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let req_id: i32 = decode_i32(&mut fields_itr)?;
         let tick_type_i32: i32 = decode_i32(&mut fields_itr)?;
         let price: f64 = decode_f64(&mut fields_itr)?;
@@ -358,6 +357,7 @@ impl Decoder {
         }
 
         let tick_price = ServerRspMsg::TickPrice {
+            version,
             req_id: req_id,
             tick_type: FromPrimitive::from_i32(tick_type_i32).unwrap(),
             price: price,
@@ -380,6 +380,7 @@ impl Decoder {
 
             if size_tick_type as i32 != TickType::NotSet as i32 {
                 let tick_size = ServerRspMsg::TickSize {
+                    version,
                     req_id: req_id,
                     tick_type: size_tick_type,
                     size: size,
@@ -397,10 +398,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let tick_string = ServerRspMsg::TickString {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             tick_type: decode_tick_type(&mut fields_itr)?,
             value: decode_string(&mut fields_itr)?,
@@ -417,10 +417,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let account_summary = ServerRspMsg::AccountSummary {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             account: decode_string(&mut fields_itr)?,
             tag: decode_string(&mut fields_itr)?,
@@ -439,10 +438,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let account_summary_end = ServerRspMsg::AccountSummaryEnd {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -457,10 +455,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let account_update_multi = ServerRspMsg::AccountUpdateMulti {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             account: decode_string(&mut fields_itr)?,
             model_code: decode_string(&mut fields_itr)?,
@@ -483,10 +480,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let account_update_multi_end = ServerRspMsg::AccountUpdateMultiEnd {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -501,10 +497,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let account_download_end = ServerRspMsg::AcctDownloadEnd {
+            version: decode_i32(&mut fields_itr)?,
             account_name: decode_string(&mut fields_itr)?,
         };
 
@@ -519,10 +514,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let update_account_time = ServerRspMsg::AcctUpdateTime {
+            version: decode_i32(&mut fields_itr)?,
             time_stamp: decode_string(&mut fields_itr)?,
         };
 
@@ -537,10 +531,10 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let update_account_value = ServerRspMsg::AcctValue {
+
+            version: decode_i32(&mut fields_itr)?,
             key: decode_string(&mut fields_itr)?,
             val: decode_string(&mut fields_itr)?,
             currency: decode_string(&mut fields_itr)?,
@@ -625,7 +619,9 @@ impl Decoder {
         }
 
         let bond_contract_details = ServerRspMsg::BondContractData {
-            req_id: req_id,
+
+            version,
+            req_id,
             contract_details: contract.clone(),
         };
 
@@ -639,9 +635,7 @@ impl Decoder {
         let mut fields_itr = fields.iter();
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
-
+        let version = decode_i32(&mut fields_itr)?;
         let mut commission_report = CommissionReport::default();
         commission_report.exec_id = fields_itr.next().unwrap().to_string();
         commission_report.commission = decode_f64(&mut fields_itr)?;
@@ -651,6 +645,8 @@ impl Decoder {
         commission_report.yield_redemption_date = decode_string(&mut fields_itr)?;
 
         let commission_report = ServerRspMsg::CommissionReport {
+
+            version,
             commission_report: commission_report.clone(),
         };
 
@@ -777,6 +773,7 @@ impl Decoder {
         }
 
         let contract_details = ServerRspMsg::ContractData {
+            version,
             req_id: req_id,
             contract_details: contract.clone(),
         };
@@ -792,10 +789,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let contract_details_end = ServerRspMsg::ContractDataEnd {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -810,10 +806,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let current_time = ServerRspMsg::CurrentTime {
+            version: decode_i32(&mut fields_itr)?,
             time: decode_i64(&mut fields_itr)?,
         };
 
@@ -831,9 +826,7 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
-
+        let version = decode_i32(&mut fields_itr)?;
         let req_id = decode_i32(&mut fields_itr)?;
 
         let mut delta_neutral_contract = DeltaNeutralContract::default();
@@ -843,6 +836,7 @@ impl Decoder {
         delta_neutral_contract.price = decode_f64(&mut fields_itr)?;
 
         let delta_neutral_validation = ServerRspMsg::DeltaNeutralValidation {
+            version,
             req_id: req_id,
             delta_neutral_contract: delta_neutral_contract.clone(),
         };
@@ -858,10 +852,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let display_group_list = ServerRspMsg::DisplayGroupList {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             groups: decode_string(&mut fields_itr)?,
         };
@@ -877,10 +870,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let display_group_updated = ServerRspMsg::DisplayGroupUpdated {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             contract_info: decode_string(&mut fields_itr)?,
         };
@@ -894,10 +886,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let error = ServerRspMsg::ErrMsg {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             error_code: decode_i32(&mut fields_itr)?,
             error_str: decode_string(&mut fields_itr)?,
@@ -1011,10 +1002,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let exec_details_end = ServerRspMsg::ExecutionDataEnd {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -1054,10 +1044,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let fundamental_data = ServerRspMsg::FundamentalData {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             data: decode_string(&mut fields_itr)?,
         };
@@ -1075,6 +1064,7 @@ impl Decoder {
         fields_itr.next();
 
         let fundamental_data = ServerRspMsg::FundamentalData {
+            version: 0,
             req_id: decode_i32(&mut fields_itr)?,
             data: decode_string(&mut fields_itr)?,
         };
@@ -1360,11 +1350,10 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         info!("calling managed_accounts");
         let managed_accounts = ServerRspMsg::ManagedAccts {
+            version: decode_i32(&mut fields_itr)?,
             accounts_list: decode_string(&mut fields_itr)?,
         };
 
@@ -1379,10 +1368,9 @@ impl Decoder {
         let mut fields_itr = fields.iter();
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let marketdatatype = ServerRspMsg::MarketDataType {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             market_data_type: decode_i32(&mut fields_itr)?,
         };
@@ -1396,10 +1384,9 @@ impl Decoder {
         let mut fields_itr = fields.iter();
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let update_mkt_depth = ServerRspMsg::MarketDepth {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             position: decode_i32(&mut fields_itr)?,
             operation: decode_i32(&mut fields_itr)?,
@@ -1419,9 +1406,8 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let req_id = decode_i32(&mut fields_itr)?;
         let position = decode_i32(&mut fields_itr)?;
         let market_maker = decode_string(&mut fields_itr)?;
@@ -1436,6 +1422,7 @@ impl Decoder {
         }
 
         let update_mkt_depth_l2 = ServerRspMsg::MarketDepthL2 {
+            version,
             req_id: req_id,
             position: position,
             market_maker: market_maker,
@@ -1536,10 +1523,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let news_bulletin = ServerRspMsg::NewsBulletins {
+            version: decode_i32(&mut fields_itr)?,
             msg_id: decode_i32(&mut fields_itr)?,
             msg_type: decode_i32(&mut fields_itr)?,
             news_message: decode_string(&mut fields_itr)?,
@@ -1582,10 +1568,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let next_valid_id = ServerRspMsg::NextValidId {
+            version: decode_i32(&mut fields_itr)?,
             order_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -1827,6 +1812,7 @@ impl Decoder {
         }
 
         let update_portfolio = ServerRspMsg::PortfolioValue {
+            version,
             contract,
             position,
             market_price,
@@ -1882,6 +1868,7 @@ impl Decoder {
         }
 
         let position_data = ServerRspMsg::PositionData {
+            version,
             account,
             contract,
             position,
@@ -1903,9 +1890,8 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let req_id = decode_i32(&mut fields_itr)?;
 
         let account = decode_string(&mut fields_itr)?;
@@ -1929,6 +1915,7 @@ impl Decoder {
         let model_code = decode_string(&mut fields_itr)?;
 
         let position_multi = ServerRspMsg::PositionMulti {
+            version,
             req_id,
             account,
             model_code,
@@ -1948,10 +1935,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let position_multi_end = ServerRspMsg::PositionMultiEnd {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -1965,9 +1951,8 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let req_id = decode_i32(&mut fields_itr)?;
 
         let mut bar = RealTimeBar::default();
@@ -1980,7 +1965,7 @@ impl Decoder {
         bar.wap = decode_f64(&mut fields_itr)?;
         bar.count = decode_i32(&mut fields_itr)?;
 
-        let real_time_bars = ServerRspMsg::RealTimeBars { req_id, bar: bar };
+        let real_time_bars = ServerRspMsg::RealTimeBars { version, req_id, bar: bar };
 
         self.send_queue.send(real_time_bars).unwrap();
         Ok(())
@@ -1992,13 +1977,13 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let fa_data_type = decode_i32(&mut fields_itr)?;
         let xml = decode_string(&mut fields_itr)?;
 
         let receive_fa = ServerRspMsg::ReceiveFa {
+            version,
             fa_data: FromPrimitive::from_i32(fa_data_type).unwrap(),
             cxml: xml,
         };
@@ -2047,8 +2032,7 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
+        let version = decode_i32(&mut fields_itr)?;
 
         let req_id = decode_i32(&mut fields_itr)?;
 
@@ -2076,6 +2060,7 @@ impl Decoder {
             data.projection = decode_string(&mut fields_itr)?;
             data.legs = decode_string(&mut fields_itr)?;
             let scanner_data = ServerRspMsg::ScannerData {
+                version,
                 req_id,
                 rank: data.rank,
                 contract_details: data.contract,
@@ -2100,11 +2085,10 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let xml = decode_string(&mut fields_itr)?;
-        let scanner_params = ServerRspMsg::ScannerParameters { xml };
+        let scanner_params = ServerRspMsg::ScannerParameters { version, xml };
 
         self.send_queue.send(scanner_params).unwrap();
         Ok(())
@@ -2342,9 +2326,8 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let ticker_id = decode_i32(&mut fields_itr)?;
         let tick_type = FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap();
         let basis_points = decode_f64(&mut fields_itr)?;
@@ -2356,6 +2339,7 @@ impl Decoder {
         let dividends_to_last_trade_date = decode_f64(&mut fields_itr)?;
 
         let tick_efp = ServerRspMsg::TickEfp {
+            version,
             ticker_id,
             tick_type,
             basis_points,
@@ -2377,14 +2361,14 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let ticker_id = decode_i32(&mut fields_itr)?;
         let tick_type = FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap();
         let value = decode_f64(&mut fields_itr)?;
 
         let tick_generic = ServerRspMsg::TickGeneric {
+            version,
             ticker_id,
             tick_type,
             value,
@@ -2486,6 +2470,7 @@ impl Decoder {
         }
 
         let tick_option_computation = ServerRspMsg::TickOptionComputation {
+            version,
             ticker_id,
             tick_type,
             implied_vol,
@@ -2526,10 +2511,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let tick_size = ServerRspMsg::TickSize {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
             tick_type: FromPrimitive::from_i32(decode_i32(&mut fields_itr)?).unwrap(),
             size: decode_i32(&mut fields_itr)?,
@@ -2545,10 +2529,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let tick_snapshot_end = ServerRspMsg::TickSnapshotEnd {
+            version: decode_i32(&mut fields_itr)?,
             req_id: decode_i32(&mut fields_itr)?,
         };
 
@@ -2565,13 +2548,13 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
+        let version = decode_i32(&mut fields_itr)?;
         let _is_successful_str = decode_string(&mut fields_itr)?;
         let is_successful = "true" == decode_string(&mut fields_itr)?;
         let error_text = decode_string(&mut fields_itr)?;
 
         let verify_and_auth = ServerRspMsg::VerifyAndAuthCompleted {
+            version,
             is_successful,
             error_text,
         };
@@ -2589,10 +2572,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let verify_and_auth_message = ServerRspMsg::VerifyAndAuthMessageApi {
+            version: decode_i32(&mut fields_itr)?,
             api_data: decode_string(&mut fields_itr)?,
             xyz_challenge: decode_string(&mut fields_itr)?,
         };
@@ -2606,13 +2588,13 @@ impl Decoder {
         let mut fields_itr = fields.iter();
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
+        let version = decode_i32(&mut fields_itr)?;
         let _is_successful_str = decode_string(&mut fields_itr)?;
         let is_successful = "true" == decode_string(&mut fields_itr)?;
         let error_text = decode_string(&mut fields_itr)?;
         let verify_completed = ServerRspMsg::VerifyCompleted {
+            version,
             is_successful,
             error_text,
         };
@@ -2627,10 +2609,9 @@ impl Decoder {
         let mut fields_itr = fields.iter();
         //throw away message_id
         fields_itr.next();
-        //throw away version
-        fields_itr.next();
 
         let verify_message_api = ServerRspMsg::VerifyMessageApi {
+            version: decode_i32(&mut fields_itr)?,
             api_data: decode_string(&mut fields_itr)?,
         };
 
@@ -2679,6 +2660,7 @@ impl Decoder {
                 Result::Ok(val) => {
                     if val.len() > MAX_MSG_LEN as usize {
                         let error_msg = ServerRspMsg::ErrMsg {
+                            version: self.server_version,
                             req_id: NO_VALID_ID,
                             error_code: TwsError::NotConnected.code(),
                             error_str: format!(

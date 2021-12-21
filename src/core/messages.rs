@@ -56,12 +56,14 @@ pub enum FAMessageDataTypes {
 #[strum_discriminants(derive(FromPrimitive, EnumString, EnumVariantNames))]
 pub enum ServerRspMsg {
     TickPrice {
+        version: i32,
         req_id: i32,
         tick_type: TickType,
         price: f64,
         tick_attr: TickAttrib,
     },
     TickSize {
+        version: i32,
         req_id: i32,
         tick_type: TickType,
         size: i32,
@@ -80,6 +82,7 @@ pub enum ServerRspMsg {
         mkt_cap_price: f64,
     },
     ErrMsg {
+        version: i32,
         req_id: i32,
         error_code: i32,
         error_str: String,
@@ -91,12 +94,14 @@ pub enum ServerRspMsg {
         order_state: OrderState,
     },
     AcctValue {
+        version: i32,
         key: String,
         val: String,
         currency: String,
         account_name: String,
     },
     PortfolioValue {
+        version: i32,
         contract: Contract,
         position: f64,
         market_price: f64,
@@ -107,12 +112,15 @@ pub enum ServerRspMsg {
         account_name: String,
     },
     AcctUpdateTime {
+        version: i32,
         time_stamp: String,
     },
     NextValidId {
+        version: i32,
         order_id: i32,
     },
     ContractData {
+        version: i32,
         req_id: i32,
         contract_details: ContractDetails,
     },
@@ -122,6 +130,7 @@ pub enum ServerRspMsg {
         execution: Execution,
     },
     MarketDepth {
+        version: i32,
         req_id: i32,
         position: i32,
         operation: i32,
@@ -130,6 +139,7 @@ pub enum ServerRspMsg {
         size: i32,
     },
     MarketDepthL2 {
+        version: i32,
         req_id: i32,
         position: i32,
         market_maker: String,
@@ -140,15 +150,18 @@ pub enum ServerRspMsg {
         is_smart_depth: bool,
     },
     NewsBulletins {
+        version: i32,
         msg_id: i32,
         msg_type: i32,
         news_message: String,
         origin_exch: String,
     },
     ManagedAccts {
+        version: i32,
         accounts_list: String,
     },
     ReceiveFa {
+        version: i32,
         fa_data: FaDataType,
         cxml: String,
     },
@@ -157,14 +170,17 @@ pub enum ServerRspMsg {
         bar: BarData,
     },
     BondContractData {
+        version: i32,
         req_id: i32,
         contract_details: ContractDetails,
     },
 
     ScannerParameters {
+        version: i32,
         xml: String,
     },
     ScannerData {
+        version: i32,
         req_id: i32,
         rank: i32,
         contract_details: ContractDetails,
@@ -174,6 +190,7 @@ pub enum ServerRspMsg {
         legs_str: String,
     },
     TickOptionComputation {
+        version: i32,
         ticker_id: i32,
         tick_type: TickType,
         implied_vol: f64,
@@ -186,16 +203,19 @@ pub enum ServerRspMsg {
         und_price: f64,
     },
     TickGeneric {
+        version: i32,
         ticker_id: i32,
         tick_type: TickType,
         value: f64,
     },
     TickString {
+        version: i32,
         req_id: i32,
         tick_type: TickType,
         value: String,
     },
     TickEfp {
+        version: i32,
         ticker_id: i32,
         tick_type: TickType,
         basis_points: f64,
@@ -207,27 +227,34 @@ pub enum ServerRspMsg {
         dividends_to_last_trade_date: f64,
     },
     CurrentTime {
+        version: i32,
         time: i64,
     },
     RealTimeBars {
+        version: i32,
         req_id: i32,
         bar: RealTimeBar,
     },
     FundamentalData {
+        version: i32,
         req_id: i32,
         data: String,
     },
     ContractDataEnd {
+        version: i32,
         req_id: i32,
     },
     OpenOrderEnd,
     AcctDownloadEnd {
+        version: i32,
         account_name: String,
     },
     ExecutionDataEnd {
+        version: i32,
         req_id: i32,
     },
     DeltaNeutralValidation {
+        version: i32,
         req_id: i32,
         delta_neutral_contract: DeltaNeutralContract,
     },
@@ -235,16 +262,20 @@ pub enum ServerRspMsg {
         req_id: i32,
     },
     TickSnapshotEnd {
+        version: i32,
         req_id: i32,
     },
     MarketDataType {
+        version: i32,
         req_id: i32,
         market_data_type: i32,
     },
     CommissionReport {
+        version: i32,
         commission_report: CommissionReport,
     },
     PositionData {
+        version: i32,
         account: String,
         contract: Contract,
         position: f64,
@@ -252,6 +283,7 @@ pub enum ServerRspMsg {
     },
     PositionEnd,
     AccountSummary {
+        version: i32,
         req_id: i32,
         account: String,
         tag: String,
@@ -259,32 +291,40 @@ pub enum ServerRspMsg {
         currency: String,
     },
     AccountSummaryEnd {
+        version: i32,
         req_id: i32,
     },
     VerifyMessageApi {
+        version: i32,
         api_data: String,
     },
     VerifyCompleted {
+        version: i32,
         is_successful: bool,
         error_text: String,
     },
     DisplayGroupList {
+        version: i32,
         req_id: i32,
         groups: String,
     },
     DisplayGroupUpdated {
+        version: i32,
         req_id: i32,
         contract_info: String,
     },
     VerifyAndAuthMessageApi {
+        version: i32,
         api_data: String,
         xyz_challenge: String,
     },
     VerifyAndAuthCompleted {
+        version: i32,
         is_successful: bool,
         error_text: String,
     },
     PositionMulti {
+        version: i32,
         req_id: i32,
         account: String,
         model_code: String,
@@ -293,9 +333,11 @@ pub enum ServerRspMsg {
         avg_cost: f64,
     },
     PositionMultiEnd {
+        version: i32,
         req_id: i32,
     },
     AccountUpdateMulti {
+        version: i32,
         req_id: i32,
         account: String,
         model_code: String,
@@ -304,6 +346,7 @@ pub enum ServerRspMsg {
         currency: String,
     },
     AccountUpdateMultiEnd {
+        version: i32,
         req_id: i32,
     },
     SecurityDefinitionOptionParameter {
