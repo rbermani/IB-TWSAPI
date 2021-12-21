@@ -174,7 +174,6 @@ pub enum ServerRspMsg {
         req_id: i32,
         contract_details: ContractDetails,
     },
-
     ScannerParameters {
         version: i32,
         xml: String,

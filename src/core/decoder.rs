@@ -2032,10 +2032,9 @@ impl Decoder {
 
         //throw away message_id
         fields_itr.next();
+
         let version = decode_i32(&mut fields_itr)?;
-
         let req_id = decode_i32(&mut fields_itr)?;
-
         let number_of_elements = decode_i32(&mut fields_itr)?;
 
         for _ in 0..number_of_elements {
