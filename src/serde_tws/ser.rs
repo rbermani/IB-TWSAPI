@@ -217,10 +217,16 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
         let term: &str = "\u{0}";
-        let msg_id = (variant_index + 1).to_string() + term;
-        self.payload_len = msg_id.len();
+        let mut msg_id = variant_index + 1;
+        if msg_id >= 26 && msg_id < 37 {
+            msg_id += 23;
+        } else if msg_id >= 37 && msg_id < 76 {
+            msg_id += 24;
+        }
+        let msg_id_str = msg_id.to_string() + term;
+        self.payload_len = msg_id_str.len();
         self.output.push_str(&"\u{0}\u{0}\u{0}\u{0}");
-        self.output.push_str(&msg_id);
+        self.output.push_str(&msg_id_str);
         Ok(self)
     }
 }

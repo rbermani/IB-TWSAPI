@@ -2,36 +2,38 @@
 
 use crate::serde_tws::error::*;
 use std::convert::TryInto;
+use crate::core::messages::ServerReqMsg;
 
 use std::iter::Peekable;
 //use std::slice::Iter;
 //use std::iter::IntoIterator;
 //use::alloc_vec::IntoIter;
+
 use serde::de::{
     self, value::U8Deserializer, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess,
     SeqAccess, VariantAccess, Visitor,
 };
 use serde::Deserialize;
 
-pub fn from_str<'a, T>(s: &'a str) -> Result<T>
+pub fn from_bytes<'a, T>(b: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    Deserializer::from_str(s).deserialize()
+    Deserializer::from_bytes(b).deserialize()
 }
 
+#[derive(Clone)]
 pub struct Deserializer<'de> {
-    source: &'de str,
+    source: &'de [u8],
     payload_len: usize,
     veclen: usize,
-    field_iter: Peekable<std::vec::IntoIter<&'de str>>,
+    field_iter: Peekable<std::vec::IntoIter<&'de [u8]>>,
 }
 
 impl<'de> Deserializer<'de> {
-    pub fn from_str(input: &'de str) -> Self {
-        let bytes = input.as_bytes();
-        let payload_len = i32::from_be_bytes(bytes[0..4].try_into().unwrap()) as usize;
-        let fields: Vec<&str> = input[4..].split('\0').collect();
+    pub fn from_bytes(input: &'de [u8]) -> Self {
+        let payload_len = i32::from_be_bytes(input[0..4].try_into().unwrap()) as usize;
+        let fields: Vec<&[u8]> = input[4..].split(|val| val == &(0 as u8)).collect();
         let field_iter = fields.into_iter().peekable();
         let veclen = 0;
         Deserializer {
@@ -61,11 +63,14 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         unimplemented!()
     }
 
-    fn deserialize_bool<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        let next = self.field_iter.next();
+        let nextval_str = std::str::from_utf8(next.unwrap()).unwrap();
+        let val: bool = nextval_str.parse().unwrap_or(false) as bool;
+        visitor.visit_bool(val)
     }
 
     fn deserialize_i8<V>(self, _visitor: V) -> Result<V::Value>
@@ -87,7 +92,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         let next = self.field_iter.next();
-        visitor.visit_i32(next.unwrap().parse().unwrap_or(0))
+        let nextval_str = std::str::from_utf8(next.unwrap()).unwrap();
+        visitor.visit_i32(nextval_str.parse().unwrap_or(0))
     }
 
     fn deserialize_i64<V>(self, _visitor: V) -> Result<V::Value>
@@ -137,7 +143,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         let next = self.field_iter.next();
-        visitor.visit_f64(next.unwrap().parse().unwrap_or(0.0))
+        let nextval_str = std::str::from_utf8(next.unwrap()).unwrap();
+        visitor.visit_f64(nextval_str.parse().unwrap_or(0.0))
     }
 
     fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
@@ -153,7 +160,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         println!("deserialize_str()");
         let next = self.field_iter.next();
-        visitor.visit_borrowed_str(next.unwrap())
+        let nextval_str = std::str::from_utf8(next.unwrap()).unwrap();
+        visitor.visit_borrowed_str(nextval_str)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -182,7 +190,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         let next = self.field_iter.next();
-        let result: i32 = next.unwrap().parse().unwrap_or(0);
+        let nextval_str = std::str::from_utf8(next.unwrap()).unwrap();
+        let result: i32 = nextval_str.parse().unwrap_or(0);
         if result == 0 {
             visitor.visit_none()
         } else if result == 1 {
@@ -227,7 +236,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if let Some(i) = self.field_iter.next() {
-            self.veclen = usize::from_str_radix(i, 10)?;
+            let nextval_str = std::str::from_utf8(i).unwrap();
+            self.veclen = usize::from_str_radix(nextval_str, 10)?;
             visitor.visit_seq(VecSeqAccess::new(self))
         } else {
             Err(Error::ExpectedArray)
@@ -270,12 +280,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         println!("deserialize_struct()");
-        visitor.visit_map(self)
+        visitor.visit_seq(self)
     }
 
     fn deserialize_enum<V>(
         self,
-        _name: &'static str,
+        name: &'static str,
         _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
@@ -283,16 +293,38 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         println!(
-            "deserialize_enum() inputlen: {} payloadlen: {}",
+            "deserialize_enum() {} inputlen: {} payloadlen: {}",
+            name,
             self.source.len(),
             self.payload_len
         );
-        let next = self.field_iter.next();
-        let msg_id_idx: usize = next.unwrap().parse().unwrap_or(0) - 1;
-        visitor.visit_enum(Enum::new(self, msg_id_idx as u8))
+        if name.eq("ServerReqMsg") {
+            let next = self.field_iter.next().unwrap();
+            let nextval_str = std::str::from_utf8(next).unwrap();
+            let mut msg_id_idx: usize = nextval_str.parse().unwrap_or(0);
+            println!("PreMsg ID: {}", msg_id_idx);
+
+            if msg_id_idx >= 49 && msg_id_idx < 60 {
+                msg_id_idx -= 23;
+            } else if msg_id_idx >= 61 && msg_id_idx < 100 {
+                msg_id_idx -= 24;
+            } else if msg_id_idx >= 100 {
+                return Err(Error::Unsupported);
+            }
+
+            msg_id_idx -= 1;
+            println!("Using Msg ID: {}", msg_id_idx);
+            visitor.visit_enum(Enum::new(self, msg_id_idx as u8))
+        } else {
+            let next = self.field_iter.next().unwrap();
+            let nextval_str = std::str::from_utf8(next).unwrap();
+            let mut msg_id_idx: usize = nextval_str.parse().unwrap_or(0);
+            println!("Enum ID: {}", msg_id_idx);
+            visitor.visit_enum(Enum::new(self, msg_id_idx as u8))
+        }
     }
 
-    fn deserialize_identifier<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -389,8 +421,8 @@ impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
         V: DeserializeSeed<'de>,
     {
         println!("variant_seed()");
-        let de: U8Deserializer<Self::Error> = self.index.into_deserializer();
-        let v = seed.deserialize(de)?;
+        let tmpde: U8Deserializer<Self::Error> = self.index.into_deserializer();
+        let v = seed.deserialize(tmpde)?;
         Ok((v, self))
     }
 }
@@ -409,7 +441,6 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
     {
         println!("newtype_variant_seed()");
         let value = seed.deserialize(self.de)?;
-        //self.expect_end()?;
         Ok(value)
     }
 
