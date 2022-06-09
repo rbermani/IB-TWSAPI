@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["bobbermani@gmail.com", "brett.miller@sparkstart.com"]
 edition = "2018"
 description = "A fork of the IBKR-API-Rust package that uses a simpler interface paradigm"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
